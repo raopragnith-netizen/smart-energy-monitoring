@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — Smart Energy AI</title>
+    <meta name="description" content="Smart Energy AI — Intelligent energy analytics for smarter consumption.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-layout">
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <span class="sidebar-brand">Smart Energy AI</span>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-link active" data-section="dashboard">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-link" data-section="analytics">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <span>Analytics</span>
+                </a>
+                <a href="#" class="nav-link" data-section="bill-history">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                    <span>Bill History</span>
+                </a>
+                <a href="#" class="nav-link" data-section="reports">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    <span>Reports</span>
+                </a>
+                <a href="#" class="nav-link" data-section="settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>Settings</span>
+                </a>
+                <a href="#" class="nav-link" data-section="profile">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span>Profile</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Area -->
+        <div class="main-area">
+
+            <!-- Top Bar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                    <h1 class="topbar-title" id="page-title">Dashboard</h1>
+                </div>
+                <div class="topbar-right">
+                    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode" aria-label="Toggle theme">
+                        <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                        <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    </button>
+                    <span class="ml-badge" id="ml-status">
+                        <span class="ml-dot" id="ml-dot-top"></span>
+                        ML: Checking...
+                    </span>
+                    <span class="notif-badge" id="notification-badge" title="Notification alerts" style="display:none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        <span class="notif-count" id="notif-count">0</span>
+                    </span>
+                    <div class="user-chip" id="user-badge">
+                        <div class="user-avatar" id="user-avatar">U</div>
+                        <span class="user-name" id="user-name">User</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Scrollable Content -->
+            <main class="content-area">
+
+                <!-- ===== DASHBOARD SECTION ===== -->
+                <section class="page-section active" id="section-dashboard">
+
+                    <!-- Empty State (shown when no data) -->
+                    <div id="empty-state" class="empty-state-container" style="display:none;">
+                        <div class="empty-state-card">
+                            <div class="empty-state-icon">
+                                <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            </div>
+                            <h2 class="empty-state-title">No Data Available</h2>
+                            <p class="empty-state-desc">Upload your electricity usage dataset to view insights, predictions, and analytics.</p>
+                            <div class="empty-state-steps">
+                                <div class="step-item"><span class="step-num">1</span><span>Upload your CSV dataset</span></div>
+                                <div class="step-item"><span class="step-num">2</span><span>Train the ML models</span></div>
+                                <div class="step-item"><span class="step-num">3</span><span>View predictions & insights</span></div>
+                            </div>
+                            <div class="empty-state-actions">
+                                <button class="btn btn-primary" onclick="document.querySelectorAll('.nav-link').forEach(l=>{l.classList.remove('active');if(l.dataset.section==='analytics')l.classList.add('active')});document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));document.getElementById('section-analytics').classList.add('active');document.getElementById('page-title').textContent='Analytics';">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    Upload Dataset
+                                </button>
+                                <button class="btn btn-outline" id="loadSampleBtn">Use Sample Dataset</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Data-dependent content wrapper (hidden until data check passes) -->
+                    <div id="dashboard-content" style="display:none;">
+
+                    <!-- Anomaly Warning Banner -->
+                    <div id="anomaly-banner" class="alert-banner alert-warning" style="display:none;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <span id="anomaly-banner-text">Anomalies detected in your energy consumption</span>
+                        <button class="alert-close" onclick="document.getElementById('anomaly-banner').style.display='none'">&#10005;</button>
+                    </div>
+
+                    <!-- Budget Warning Banner -->
+                    <div id="budget-banner" class="alert-banner alert-danger" style="display:none;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <span id="budget-banner-text">You are likely to exceed your monthly limit.</span>
+                        <button class="alert-close" onclick="document.getElementById('budget-banner').style.display='none'">&#10005;</button>
+                    </div>
+
+                    <!-- Status Cards -->
+                    <div class="metrics-grid" id="status-cards">
+                        <div class="metric-card">
+                            <div class="metric-icon icon-blue">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                            </div>
+                            <div class="metric-body">
+                                <span class="metric-label">Current Usage</span>
+                                <span class="metric-value" id="card-current">--</span>
+                                <span class="metric-unit">kWh</span>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon icon-violet">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                            </div>
+                            <div class="metric-body">
+                                <span class="metric-label">Predicted Next</span>
+                                <span class="metric-value" id="card-predicted">--</span>
+                                <span class="metric-unit">kWh</span>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon icon-green">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+                            </div>
+                            <div class="metric-body">
+                                <span class="metric-label">7-Day Average</span>
+                                <span class="metric-value" id="card-avg">--</span>
+                                <span class="metric-unit">kWh/day</span>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon icon-red">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            </div>
+                            <div class="metric-body">
+                                <span class="metric-label">Anomalies</span>
+                                <span class="metric-value" id="card-anomalies">--</span>
+                                <span class="metric-unit">detected</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard 2x2 Grid -->
+                    <div class="dashboard-grid">
+
+                        <!-- Panel 1: Daily Usage -->
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <span class="panel-icon icon-blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+                                    <h3>Daily Usage Trend</h3>
+                                </div>
+                            </div>
+                            <div class="panel-body chart-wrapper">
+                                <canvas id="dailyUsageChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Panel 2: Weekly Trends -->
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <span class="panel-icon icon-green"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+                                    <h3>Weekly Comparison</h3>
+                                </div>
+                            </div>
+                            <div class="panel-body chart-wrapper">
+                                <canvas id="weeklyCompChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Panel 3: Monthly Prediction -->
+                        <div class="panel" id="monthly-panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <span class="panel-icon icon-violet"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+                                    <h3>Monthly Projection</h3>
+                                </div>
+                                <div class="panel-badge" id="budget-status-badge" style="display:none;">Over Limit</div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="monthly-stats">
+                                    <div class="monthly-stat">
+                                        <span class="stat-label">Projected</span>
+                                        <span class="stat-value" id="projected-total">--</span>
+                                        <span class="stat-unit">kWh</span>
+                                    </div>
+                                    <div class="monthly-stat">
+                                        <span class="stat-label">Budget Limit</span>
+                                        <span class="stat-value" id="budget-limit-display">--</span>
+                                        <span class="stat-unit">kWh</span>
+                                    </div>
+                                    <div class="monthly-stat">
+                                        <span class="stat-label">Days Left</span>
+                                        <span class="stat-value" id="days-remaining">--</span>
+                                        <span class="stat-unit">days</span>
+                                    </div>
+                                </div>
+                                <div class="gauge-container">
+                                    <div class="gauge-bar">
+                                        <div class="gauge-fill" id="budget-gauge-fill" style="width:0%"></div>
+                                    </div>
+                                    <div class="gauge-labels">
+                                        <span>0 kWh</span>
+                                        <span id="gauge-limit-label">-- kWh</span>
+                                    </div>
+                                </div>
+                                <div class="chart-wrapper" style="min-height:180px;">
+                                    <canvas id="monthlyPredChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Panel 4: Alerts & Notifications -->
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <span class="panel-icon icon-red"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
+                                    <h3>Alerts &amp; Notifications</h3>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="alert-feed" id="alert-feed">
+                                    <div class="alert-feed-empty">No alerts at this time.</div>
+                                </div>
+                                <h4 class="sub-heading">Anomaly Log</h4>
+                                <div class="anomaly-log" id="anomaly-log">
+                                    <div class="alert-feed-empty">No anomalies detected.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Appliance Breakdown -->
+                    <div class="dashboard-grid" style="margin-top:var(--space-lg)">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <span class="panel-icon icon-violet"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg></span>
+                                    <h3>Appliance Breakdown (Estimated)</h3>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="appliance-layout">
+                                    <div class="chart-wrapper" style="max-width:280px;margin:0 auto;"><canvas id="applianceChart"></canvas></div>
+                                    <div id="applianceLegend" class="appliance-legend"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <span class="panel-icon icon-green"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
+                                    <h3>Smart Insights</h3>
+                                </div>
+                                <button id="getRecsBtn" class="btn btn-outline btn-sm">Refresh</button>
+                            </div>
+                            <div class="panel-body">
+                                <ul id="recsList" class="recs-list"><li>Loading recommendations...</li></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Weekly Predictions Panel -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>7-Day Usage Prediction</h3>
+                            <button id="genWeekPredBtn" class="btn btn-outline btn-sm">Generate Forecast</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="weekly-pred-layout">
+                                <div class="prediction-list" id="prediction-list">
+                                    <div class="alert-feed-empty">Click "Generate Forecast" to see predictions.</div>
+                                </div>
+                                <div class="chart-wrapper" style="min-height:220px;flex:1;">
+                                    <canvas id="weeklyPredChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+
+                    </div><!-- end dashboard-content -->
+
+                    <!-- Auto-refresh indicator -->
+                    <div class="refresh-indicator" id="refresh-indicator">
+                        <span class="refresh-dot"></span>
+                        <span>Live — updates every 30s</span>
+                    </div>
+                </section>
+
+                <!-- ===== ANALYTICS SECTION ===== -->
+                <section class="page-section" id="section-analytics">
+
+                    <!-- ML Service Status Bar -->
+                    <div class="card ml-control" id="ml-control-panel">
+                        <div class="ml-control-left">
+                            <div class="ml-status-dot" id="ml-dot"></div>
+                            <div class="ml-control-info">
+                                <span class="ml-control-title">ML Service</span>
+                                <span class="ml-control-subtitle" id="ml-control-status">Checking status...</span>
+                            </div>
+                        </div>
+                        <div class="ml-control-actions">
+                            <button id="ml-start-btn" class="btn btn-primary btn-sm" onclick="startMLService()">&#9654; Start</button>
+                            <button id="ml-stop-btn" class="btn btn-danger-outline btn-sm" onclick="stopMLService()">&#9632; Stop</button>
+                        </div>
+                    </div>
+
+                    <!-- ===== DUAL DATA INPUT ===== -->
+                    <div class="card" id="data-input-card">
+                        <div class="card-header">
+                            <h3>Add Energy Data</h3>
+                            <span class="card-badge">Step 1</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-desc" style="margin-bottom:1rem">Choose how you'd like to import your energy consumption data.</p>
+
+                            <!-- Method Selector Tabs -->
+                            <div class="method-tabs" id="uploadMethodTabs">
+                                <button class="method-tab active" data-method="bill">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                    <div>
+                                        <span class="method-tab-title">Upload Bill</span>
+                                        <span class="method-tab-desc">Scan electricity bill via OCR</span>
+                                    </div>
+                                </button>
+                                <button class="method-tab" data-method="csv">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                                    <div>
+                                        <span class="method-tab-title">Upload CSV</span>
+                                        <span class="method-tab-desc">Import historical data manually</span>
+                                    </div>
+                                </button>
+                            </div>
+
+                            <!-- BILL UPLOAD PANEL -->
+                            <div class="method-panel active" id="panel-bill">
+                                <div class="supported-boards">
+                                    <span class="board-tag">APSPDCL</span><span class="board-tag">APEPDCL</span><span class="board-tag">TSSPDCL</span><span class="board-tag">BESCOM</span><span class="board-tag">TANGEDCO</span><span class="board-tag">MSEDCL</span><span class="board-tag">+ More</span>
+                                </div>
+                                <div class="bill-dropzone" id="billDropzone">
+                                    <div class="dropzone-content">
+                                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                        <p class="dropzone-text">Drag & drop your bill here, or <span class="dropzone-browse">browse files</span></p>
+                                        <p class="dropzone-hint">Supports JPG, PNG, PDF — Max 10MB</p>
+                                    </div>
+                                    <input type="file" id="billFileInput" accept=".jpg,.jpeg,.png,.pdf,.bmp,.webp" class="dropzone-input">
+                                </div>
+                                <div class="bill-preview" id="billPreview" style="display:none;"><div class="preview-info"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><div class="preview-details"><span class="preview-name" id="previewFileName">—</span><span class="preview-size" id="previewFileSize">—</span></div><button class="preview-remove" id="previewRemoveBtn" title="Remove file">&#10005;</button></div><div class="preview-img-container" id="previewImgContainer" style="display:none;"><img id="previewImg" alt="Bill preview"></div></div>
+                                <div class="bill-progress" id="billProgress" style="display:none;"><div class="progress-bar"><div class="progress-fill" id="billProgressFill"></div></div><span class="progress-text" id="billProgressText">Processing...</span></div>
+                                <button class="btn btn-primary" id="processBillBtn" style="display:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Process Bill with OCR</button>
+                                <div id="billUploadStatus" class="status-message"></div>
+                                <div class="extraction-results" id="extractionResults" style="display:none;">
+                                    <h4 class="sub-heading">Verify Extracted Bill Data</h4>
+                                    <div class="extraction-grid">
+                                        <div class="extract-item"><span class="extract-label">Electricity Board</span><input type="text" class="extract-input" id="ext-board" value=""></div>
+                                        <div class="extract-item"><span class="extract-label">Consumer No.</span><input type="text" class="extract-input" id="ext-consumer" value=""></div>
+                                        <div class="extract-item"><span class="extract-label">Billing Month</span><input type="text" class="extract-input" id="ext-month" value=""></div>
+                                        <div class="extract-item"><span class="extract-label">Units Consumed</span><input type="number" class="extract-input extract-highlight" id="ext-units" value=""></div>
+                                        <div class="extract-item"><span class="extract-label">Bill Amount (₹)</span><input type="number" class="extract-input extract-highlight" id="ext-amount" value=""></div>
+                                        <div class="extract-item"><span class="extract-label">Previous Reading</span><input type="number" class="extract-input" id="ext-prev" value=""></div>
+                                        <div class="extract-item"><span class="extract-label">Current Reading</span><input type="number" class="extract-input" id="ext-curr" value=""></div>
+                                        <div class="extract-item"><span class="extract-label">Confidence</span><span class="extract-value" id="ext-confidence">—</span></div>
+                                    </div>
+                                    <div class="extraction-footer">
+                                        <span id="ext-records-msg"></span>
+                                        <div style="display:flex;gap:12px;margin-top:12px">
+                                            <button class="btn btn-primary" id="confirmBillBtn">Confirm &amp; Process predictions</button>
+                                            <button class="btn btn-outline" id="cancelOcrBtn">Cancel</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CSV UPLOAD PANEL -->
+                            <div class="method-panel" id="panel-csv">
+                                <div class="csv-guide">
+                                    <h4 class="sub-heading">CSV Format Guide</h4>
+                                    <p class="card-desc">Your CSV should have a <strong>date</strong> column and a <strong>units/consumption</strong> column. Names are auto-detected.</p>
+                                    <div class="csv-sample">
+                                        <div class="csv-sample-header"><span>sample_data.csv</span><button class="btn btn-outline btn-xs" id="copyCsvSample">Copy</button></div>
+                                        <pre class="csv-sample-code">Date,Units
+2025-01-01,12.5
+2025-01-02,14.2
+2025-01-03,11.8
+2025-01-04,16.1
+2025-01-05,13.7
+...</pre>
+                                    </div>
+                                    <div class="csv-rules">
+                                        <div class="csv-rule"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Date formats: YYYY-MM-DD, MM/DD/YYYY, DD-MM-YYYY</span></div>
+                                        <div class="csv-rule"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Units in kWh (decimal values supported)</span></div>
+                                        <div class="csv-rule"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Min 10 rows needed for ML training</span></div>
+                                    </div>
+                                </div>
+                                <form id="uploadForm" class="upload-form">
+                                    <div class="csv-upload-row">
+                                        <input type="file" id="dataset" name="dataset" accept=".csv" required>
+                                        <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload &amp; Process</button>
+                                    </div>
+                                </form>
+                                <div id="uploadStatus" class="status-message"></div>
+                                <div class="csv-post-upload" id="csvPostUpload" style="display:none">
+                                    <div class="csv-success-info"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span id="csvSuccessText">Dataset uploaded successfully.</span></div>
+                                    <button id="trainBtn" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Train ML Models</button>
+                                </div>
+                                <button class="btn btn-outline btn-sm" id="loadSampleBtn2" style="margin-top:0.75rem">Use Sample Dataset Instead</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Uploads -->
+                    <div class="card" id="bill-history-card">
+                        <div class="card-header"><h3>Recent Uploads</h3><button class="btn btn-outline btn-sm" id="refreshBillHistoryBtn">Refresh</button></div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="data-table" id="bill-history-table"><thead><tr><th>Date</th><th>Board</th><th>Consumer No.</th><th>Units</th><th>Amount (₹)</th><th>Confidence</th></tr></thead><tbody id="bill-history-tbody"><tr><td colspan="6" class="empty-state">No bills uploaded yet.</td></tr></tbody></table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bill Comparison -->
+                    <div class="card"><div class="card-header"><h3>Bill Comparison</h3></div><div class="card-body chart-wrapper"><canvas id="billCompChart"></canvas></div></div>
+
+                    <!-- Charts -->
+                    <div class="card">
+                        <div class="card-header"><h3>Historical Consumption &amp; Forecast</h3><div class="toggle-group"><button class="toggle-btn active" data-range="daily">Daily</button><button class="toggle-btn" data-range="weekly">Weekly</button></div></div>
+                        <div class="card-body chart-wrapper"><canvas id="mainChart"></canvas></div>
+                        <div class="card-footer"><button id="predictBtn" class="btn btn-outline">Generate Next Prediction</button></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header"><h3>Anomaly Detection</h3></div>
+                        <div class="card-body chart-wrapper"><canvas id="anomalyChart"></canvas></div>
+                        <div class="card-footer"><button id="anomalyBtn" class="btn btn-outline">Detect Anomalies</button></div>
+                    </div>
+                </section>
+
+
+                <!-- ===== REPORTS SECTION ===== -->
+                <section class="page-section" id="section-reports">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Energy Usage Report</h3>
+                            <div style="display:flex;gap:8px">
+                                <button id="exportCsvBtn" class="btn btn-outline btn-sm">&#128190; Export CSV</button>
+                                <button id="exportPdfBtn" class="btn btn-outline btn-sm">&#128196; Export PDF</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="report-summary" id="report-summary"></div>
+                            <div class="table-container">
+                                <table class="data-table" id="reports-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Usage (kWh)</th>
+                                            <th>Estimated Cost (&#x20B9;)</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="reports-tbody">
+                                        <tr><td colspan="4" class="empty-state">Loading report data...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== BILL HISTORY SECTION ===== -->
+                <section class="page-section" id="section-bill-history">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Bill History</h3>
+                            <div style="display:flex;gap:8px;align-items:center">
+                                <input type="text" id="billSearchInput" placeholder="Search bills..." class="form-input" style="width:200px;padding:0.4rem 0.7rem;font-size:0.8125rem">
+                                <button class="btn btn-outline btn-sm" id="refreshBillHistoryBtn2">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container" style="max-height:500px;overflow-y:auto">
+                                <table class="data-table" id="bill-history-table-full">
+                                    <thead>
+                                        <tr>
+                                            <th class="sortable-th" data-sort="date">Upload Date ↕</th>
+                                            <th class="sortable-th" data-sort="board">Board ↕</th>
+                                            <th>Consumer No.</th>
+                                            <th>Billing Month</th>
+                                            <th class="sortable-th" data-sort="units">Units ↕</th>
+                                            <th class="sortable-th" data-sort="amount">Amount (₹) ↕</th>
+                                            <th>Confidence</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bill-history-tbody-full">
+                                        <tr><td colspan="7" class="empty-state">No bills uploaded yet. Go to Analytics to upload your first bill.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="pagination-controls" id="billPagination" style="display:none;margin-top:1rem">
+                                <button class="btn btn-outline btn-sm" id="billPrevPage">← Previous</button>
+                                <span id="billPageInfo" style="font-size:0.8125rem;color:#64748b">Page 1 of 1</span>
+                                <button class="btn btn-outline btn-sm" id="billNextPage">Next →</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Bill Trends Chart -->
+                    <div class="card">
+                        <div class="card-header"><h3>Consumption Trends from Bills</h3></div>
+                        <div class="card-body chart-wrapper"><canvas id="billTrendChart"></canvas></div>
+                    </div>
+                </section>
+
+                <!-- ===== SETTINGS SECTION ===== -->
+                <section class="page-section" id="section-settings">
+                    <div class="settings-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Notifications & Alerts</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="settings-form">
+                                    <div class="form-group">
+                                        <label for="setting-email">Notification Email</label>
+                                        <input type="email" id="setting-email" placeholder="your-email@gmail.com" class="form-input">
+                                        <span class="form-hint">Email address for receiving alerts</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="setting-budget">Monthly Budget Limit (kWh)</label>
+                                        <input type="number" id="setting-budget" placeholder="0 = no limit" min="0" class="form-input">
+                                        <span class="form-hint">Get alerts when projected usage exceeds this</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="toggle-label">
+                                            <input type="checkbox" id="setting-notifications">
+                                            <span class="toggle-switch"></span>
+                                            Enable Email Notifications
+                                        </label>
+                                        <span class="form-hint">Receive alerts for spikes, budget warnings, and anomalies</span>
+                                    </div>
+                                    <div class="form-actions">
+                                        <button id="saveSettingsBtn" class="btn btn-primary">Save Settings</button>
+                                        <button id="testEmailBtn" class="btn btn-outline">Send Test Email</button>
+                                    </div>
+                                    <div id="settingsStatus" class="status-message"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Change Password</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="settings-form">
+                                    <div class="form-group">
+                                        <label for="setting-current-pw">Current Password</label>
+                                        <input type="password" id="setting-current-pw" placeholder="Enter current password" class="form-input" autocomplete="current-password">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="setting-new-pw">New Password</label>
+                                        <input type="password" id="setting-new-pw" placeholder="Enter new password" class="form-input" autocomplete="new-password">
+                                        <span class="form-hint">Min 7 chars, 1 letter, 1 number, 1 special char</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="setting-confirm-pw">Confirm New Password</label>
+                                        <input type="password" id="setting-confirm-pw" placeholder="Confirm new password" class="form-input" autocomplete="new-password">
+                                    </div>
+                                    <div class="form-actions">
+                                        <button id="changePasswordBtn" class="btn btn-primary">Update Password</button>
+                                    </div>
+                                    <div id="passwordStatus" class="status-message"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card" style="margin-top:var(--space-lg)">
+                        <div class="card-header"><h3>Appearance</h3></div>
+                        <div class="card-body">
+                            <div class="settings-form">
+                                <div class="form-group">
+                                    <label>Theme</label>
+                                    <div style="display:flex;gap:0.75rem;margin-top:0.25rem">
+                                        <button class="btn btn-outline btn-sm theme-opt" data-theme-val="light">☀ Light</button>
+                                        <button class="btn btn-outline btn-sm theme-opt" data-theme-val="dark">🌙 Dark</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== PROFILE SECTION ===== -->
+                <section class="page-section" id="section-profile">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Profile Information</h3>
+                            <span class="card-badge" id="profile-member-since"></span>
+                        </div>
+                        <div class="card-body">
+                            <div class="profile-grid">
+                                <div class="profile-avatar-area">
+                                    <div class="profile-avatar" id="profile-avatar">U</div>
+                                </div>
+                                <div class="profile-details">
+                                    <div class="detail-row">
+                                        <span class="detail-label">Username</span>
+                                        <span class="detail-value" id="profile-username">—</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Email</span>
+                                        <span class="detail-value" id="profile-email">—</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Notifications</span>
+                                        <span class="detail-value" id="profile-notifs">—</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Budget Limit</span>
+                                        <span class="detail-value" id="profile-budget">—</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Notification Email</span>
+                                        <span class="detail-value" id="profile-notif-email">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card" style="margin-top:var(--space-lg)">
+                        <div class="card-header"><h3>Recent Activity</h3></div>
+                        <div class="card-body">
+                            <div class="table-container" style="max-height:340px;overflow-y:auto">
+                                <table class="data-table" id="activity-table">
+                                    <thead><tr><th>Action</th><th>Details</th><th>Time</th></tr></thead>
+                                    <tbody id="activity-tbody"><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+            <!-- Last Updated -->
+            <div class="last-updated" id="lastUpdatedBar" style="padding:0 var(--space-lg) var(--space-sm)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span id="lastUpdatedText">Last updated: —</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logout Confirmation Modal -->
+    <div class="modal-overlay" id="logoutModal">
+        <div class="modal-box">
+            <h3>Sign Out</h3>
+            <p>Are you sure you want to log out of your Smart Energy AI dashboard?</p>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="document.getElementById('logoutModal').classList.remove('active')">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmLogout()" style="background:#ef4444;border-color:#ef4444">Sign Out</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

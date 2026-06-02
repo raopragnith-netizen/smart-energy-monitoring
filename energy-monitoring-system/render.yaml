@@ -1,0 +1,38 @@
+services:
+  # Node.js Backend + Frontend
+  - type: web
+    name: energyai-backend
+    runtime: node
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false  # Set manually in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ML_SERVICE_URL
+        fromService:
+          name: energyai-ml
+          type: web
+          property: host
+      - key: PORT
+        value: 3000
+
+  # Python ML Service
+  - type: web
+    name: energyai-ml
+    runtime: python
+    plan: free
+    rootDir: ml_service
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1
+    envVars:
+      - key: MONGODB_URI
+        sync: false  # Set manually in Render dashboard
+      - key: PORT
+        value: 5000
+      - key: PYTHON_ENV
+        value: production

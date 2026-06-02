@@ -1,0 +1,45 @@
+# Antigravity and Gemini directories
+brain/
+.gemini/
+
+# Virtual Environment
+venv/
+energy-monitoring-system/ml_service/venv/
+
+# Local Environment Variables
+.env
+*/.env
+**/backend/.env
+**/ml_service/.env
+
+# Dataset CSV/Txt files in root (too large or local only)
+/*.csv
+/*.txt
+
+# Media files
+/*.png
+/*.jpg
+/*.jpeg
+photo.png.png
+photo1.png.png
+photo2.png.png
+energy-monitoring-system/test_bill.jpg
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+**/__pycache__/
+**/*.pyc
+
+# Node dependencies and build folders
+node_modules/
+package-lock.json
+**/node_modules/
+**/package-lock.json
+
+# Local system files
+.DS_Store
+Thumbs.db
+desktop.ini

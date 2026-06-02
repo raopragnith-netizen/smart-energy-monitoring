@@ -1,0 +1,475 @@
+/* ===== Reset & Base ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background-color: #f8f9fb;
+    color: #1a1d23;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Two-Panel Layout ===== */
+.login-page {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* ===== Left Brand Panel ===== */
+.brand-panel {
+    width: 42%;
+    background: #0f172a;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.brand-decoration {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.deco-circle {
+    position: absolute;
+    border-radius: 50%;
+}
+
+.deco-1 {
+    width: 320px;
+    height: 320px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
+    top: -60px;
+    right: -60px;
+}
+
+.deco-2 {
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.05) 0%, transparent 70%);
+    bottom: -40px;
+    left: -40px;
+}
+
+.deco-3 {
+    position: absolute;
+    width: 1px;
+    height: 120px;
+    background: linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.1), transparent);
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.brand-content {
+    position: relative;
+    z-index: 1;
+    max-width: 360px;
+}
+
+.brand-logo {
+    width: 48px;
+    height: 48px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.18);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #60a5fa;
+    margin-bottom: 1.5rem;
+}
+
+.brand-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.3px;
+    line-height: 1.3;
+}
+
+.brand-desc {
+    font-size: 0.875rem;
+    color: #94a3b8;
+    line-height: 1.65;
+    margin-bottom: 2rem;
+}
+
+.brand-features {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.brand-feature {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    transition: color 0.2s;
+}
+
+.brand-feature svg {
+    color: #475569;
+    flex-shrink: 0;
+}
+
+/* ===== Right Form Panel ===== */
+.form-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: #ffffff;
+    position: relative;
+}
+
+.form-container {
+    width: 100%;
+    max-width: 380px;
+}
+
+/* ===== Form Footer ===== */
+.form-footer {
+    position: absolute;
+    bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.6875rem;
+    color: #94a3b8;
+    letter-spacing: 0.2px;
+}
+
+/* ===== Form Sections ===== */
+.form-section {
+    animation: fadeIn 0.3s ease;
+}
+
+.form-section.hidden {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.form-section h2 {
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.3px;
+}
+
+.form-subtitle {
+    font-size: 0.875rem;
+    color: #64748b;
+    margin-bottom: 1.75rem;
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+/* ===== Auth Form ===== */
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+}
+
+/* ===== Field Groups ===== */
+.field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.field-group label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #374151;
+}
+
+.field-group input {
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #0f172a;
+    font-family: inherit;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field-group input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08);
+}
+
+.field-group input::placeholder {
+    color: #94a3b8;
+}
+
+/* ===== Password Field ===== */
+.password-field {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-field input {
+    padding-right: 2.5rem;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.eye-icon {
+    color: #94a3b8;
+    transition: color 0.15s;
+}
+
+.toggle-password:hover .eye-icon {
+    color: #64748b;
+}
+
+/* ===== Forgot Password ===== */
+.forgot-link {
+    font-size: 0.75rem;
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 500;
+    align-self: flex-end;
+    margin-top: 0.125rem;
+    transition: color 0.15s;
+}
+
+.forgot-link:hover {
+    color: #2563eb;
+}
+
+/* ===== Password Rules ===== */
+.password-rules {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.rule {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    transition: color 0.15s;
+}
+
+.rule.pass {
+    color: #10b981;
+}
+
+.rule.pass .rule-icon {
+    color: #10b981;
+}
+
+.rule.fail {
+    color: #ef4444;
+}
+
+.rule.fail .rule-icon {
+    color: #ef4444;
+}
+
+.rule-icon {
+    font-size: 0.6875rem;
+    width: 14px;
+    text-align: center;
+}
+
+/* ===== Message Box ===== */
+.message-box {
+    padding: 0;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: all 0.25s ease;
+}
+
+.message-box.show {
+    padding: 0.5rem 0.75rem;
+    max-height: 80px;
+    opacity: 1;
+}
+
+.message-box.error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+}
+
+.message-box.success {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #16a34a;
+}
+
+.message-box.info {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #2563eb;
+}
+
+/* ===== Submit Button ===== */
+.submit-btn {
+    width: 100%;
+    padding: 0.625rem;
+    border: none;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.15s ease;
+    margin-top: 0.25rem;
+}
+
+.submit-btn:hover {
+    background: #1e293b;
+}
+
+.submit-btn:active {
+    transform: scale(0.99);
+}
+
+.submit-btn.loading .btn-text {
+    opacity: 0;
+}
+
+.submit-btn.loading .btn-loader {
+    display: block;
+}
+
+.btn-loader {
+    display: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.5s linear infinite;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin: -9px 0 0 -9px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ===== Switch Text ===== */
+.switch-text {
+    text-align: center;
+    font-size: 0.8125rem;
+    color: #64748b;
+    margin-top: 0.5rem;
+}
+
+.switch-text a {
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.15s;
+}
+
+.switch-text a:hover {
+    color: #2563eb;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+    .login-page {
+        flex-direction: column;
+    }
+
+    .brand-panel {
+        width: 100%;
+        padding: 2rem 1.5rem;
+        min-height: auto;
+    }
+
+    .brand-content {
+        max-width: 100%;
+    }
+
+    .brand-features {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.25rem;
+    }
+
+    .form-panel {
+        padding: 2rem 1.5rem;
+    }
+
+    .form-footer {
+        position: relative;
+        bottom: auto;
+        margin-top: 2rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .brand-panel {
+        padding: 1.5rem 1rem;
+    }
+
+    .brand-title {
+        font-size: 1.25rem;
+    }
+
+    .brand-desc {
+        font-size: 0.8125rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .form-container {
+        max-width: 100%;
+    }
+
+    .form-section h2 {
+        font-size: 1.125rem;
+    }
+}

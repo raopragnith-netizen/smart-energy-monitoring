@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Uploads (user data)
+uploads/
+backend/uploads/
+ml_service/uploads/
+
+# Logs
+logs/
+*.log
+
+# ML Models (too large for git, retrained on server)
+ml_service/models/*.pkl
+ml_service/models/*.keras
+models/*.pkl
+models/*.keras
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+dist/
+build/
+.vercel/
+
+# Temp files
+*.tmp
+*_preprocessed.png
+
+# Reports (generated)
+reports/
+
+# Junk files
+1
+]
