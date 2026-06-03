@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     // Reconstruct headers to avoid host/connection conflicts
     const headers = {};
     Object.keys(req.headers).forEach(key => {
-        if (!['host', 'connection', 'content-length'].includes(key.toLowerCase())) {
+        if (!['host', 'connection'].includes(key.toLowerCase())) {
             headers[key] = req.headers[key];
         }
     });

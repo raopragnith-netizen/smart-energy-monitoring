@@ -61,7 +61,7 @@ Internet Users
 3. Connect your GitHub repository
 4. Configure:
    - **Name**: `energyai-ml`
-   - **Root Directory**: `ml_service`
+   - **Root Directory**: `energy-monitoring-system/ml_service`
    - **Runtime**: Python 3
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1`
@@ -76,7 +76,7 @@ Internet Users
 7. Wait for build to complete (may take 5-10 minutes for TensorFlow)
 8. Note the URL (e.g., `https://energyai-ml.onrender.com`)
 
-> **⚠️ Note**: Render free tier has 512MB RAM. TensorFlow + EasyOCR need ~1-2GB. If the build fails due to memory, you may need:
+> **⚠️ Note**: Render free tier has 512MB RAM. TensorFlow + PaddleOCR need ~1-2GB. If the build fails due to memory, you may need:
 > - Upgrade to Render Starter ($7/mo) for 2GB RAM, OR
 > - Use `tensorflow-cpu` instead of `tensorflow` in requirements.txt
 
@@ -88,10 +88,10 @@ Internet Users
 2. Connect the same GitHub repository
 3. Configure:
    - **Name**: `energyai-backend`
-   - **Root Directory**: (leave empty — uses project root)
+   - **Root Directory**: `energy-monitoring-system/backend`
    - **Runtime**: Node
-   - **Build Command**: `cd backend && npm install`
-   - **Start Command**: `cd backend && node server.js`
+   - **Build Command**: `npm install`
+   - **Start Command**: `node server.js`
    - **Plan**: Free
 4. Add environment variables:
    | Key | Value |
@@ -114,7 +114,7 @@ Internet Users
 3. Import your GitHub repository.
 4. Configure the project:
    - **Framework Preset**: Other (it will automatically read `vercel.json` and static files).
-   - **Root Directory**: (leave empty — project root).
+   - **Root Directory**: `energy-monitoring-system`.
 5. Add the environment variable:
    | Key | Value | Description |
    |-----|-------|-------------|
@@ -161,7 +161,7 @@ curl https://energyai-ml.onrender.com/health
 - Ensure MongoDB Atlas IP whitelist includes 0.0.0.0/0
 
 ### OCR not working
-- EasyOCR needs ~1GB RAM on first load (downloads model weights)
+- PaddleOCR needs ~1GB RAM on first load (downloads model weights)
 - Check ML service logs for OOM errors
 - Consider upgrading Render plan if needed
 
@@ -193,5 +193,5 @@ curl https://energyai-ml.onrender.com/health
 
 1. **Render Free Tier**: Services spin down after 15 minutes of inactivity. First request after idle may take 30-60 seconds.
 2. **MongoDB Atlas Free Tier**: 512MB storage, 100 connections. Sufficient for demo/presentation use.
-3. **EasyOCR Models**: Downloaded on first use (~100MB). Cached in memory after first bill processing.
+3. **PaddleOCR Models**: Downloaded on first use. Cached in memory after first bill processing.
 4. **LSTM Model**: Included in the repository (`models/` directory). No training needed on first deploy.

@@ -53,9 +53,9 @@ except Exception as e:
     print(f"[startup] ML models failed to load: {e}")
 
 try:
-    from bill_processor import _get_easyocr_reader
+    from bill_processor import _get_paddleocr_reader
     print("[startup] Initializing OCR reader...")
-    _get_easyocr_reader()
+    _get_paddleocr_reader()
     print("[startup] OCR reader initialized successfully.")
 except Exception as e:
     print(f"[startup] OCR reader failed to initialize: {e}")
@@ -301,8 +301,8 @@ def health():
     # Check if OCR engine is likely functional
     ocr_status = "uninitialized"
     try:
-        from bill_processor import _easyocr_reader
-        ocr_status = "ready" if _easyocr_reader is not None else "not_loaded"
+        from bill_processor import _paddleocr_reader
+        ocr_status = "ready" if _paddleocr_reader is not None else "not_loaded"
     except:
         ocr_status = "error"
 

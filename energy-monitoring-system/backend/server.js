@@ -139,63 +139,63 @@ async function isMLServiceRunning() {
 let mlProcess = null;
 let mlStarting = false;
 
-if (SHOULD_SPAWN_ML) {
-    const { spawn } = require('child_process');
-    const ML_SERVICE_DIR = path.resolve(__dirname, '..', 'ml_service');
-    const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === 'win32' 
-        ? path.join(ML_SERVICE_DIR, 'venv', 'Scripts', 'python.exe')
-        : path.join(ML_SERVICE_DIR, 'venv', 'bin', 'python'));
-    const ML_WATCHDOG_INTERVAL = 30000;
+const { spawn } = require('child_process');
+const ML_SERVICE_DIR = path.resolve(__dirname, '..', 'ml_service');
+const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === 'win32' 
+    ? path.join(ML_SERVICE_DIR, 'venv', 'Scripts', 'python.exe')
+    : path.join(ML_SERVICE_DIR, 'venv', 'bin', 'python'));
+const ML_WATCHDOG_INTERVAL = 30000;
 
-    function startMLServiceProcess() {
-        if (mlStarting) return;
-        mlStarting = true;
-        console.log('[ML Watchdog] Starting ML Service...');
-        try {
-            mlProcess = spawn(PYTHON_PATH, ['app.py'], {
-                cwd: ML_SERVICE_DIR,
-                detached: true,
-                windowsHide: true,
-                stdio: ['ignore', 'pipe', 'pipe']
-            });
-            mlProcess.unref();
-            mlProcess.stdout.on('data', (data) => {
-                const msg = data.toString().trim();
-                if (msg) console.log(`[ML Service] ${msg}`);
-            });
-            mlProcess.stderr.on('data', (data) => {
-                const msg = data.toString().trim();
-                if (msg && !msg.includes('tensorflow') && !msg.includes('oneDNN')) {
-                    console.log(`[ML Service] ${msg}`);
-                }
-            });
-            mlProcess.on('error', (err) => {
-                console.error('[ML Watchdog] Failed to start ML Service:', err.message);
-                mlProcess = null;
-                mlStarting = false;
-            });
-            mlProcess.on('exit', (code) => {
-                console.log(`[ML Watchdog] ML Service exited with code ${code}`);
-                mlProcess = null;
-                mlStarting = false;
-            });
-            setTimeout(() => { mlStarting = false; }, 15000);
-        } catch (err) {
-            console.error('[ML Watchdog] Error spawning ML Service:', err.message);
+function startMLServiceProcess() {
+    if (mlStarting) return;
+    mlStarting = true;
+    console.log('[ML Watchdog] Starting ML Service...');
+    try {
+        mlProcess = spawn(PYTHON_PATH, ['app.py'], {
+            cwd: ML_SERVICE_DIR,
+            detached: true,
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+        mlProcess.unref();
+        mlProcess.stdout.on('data', (data) => {
+            const msg = data.toString().trim();
+            if (msg) console.log(`[ML Service] ${msg}`);
+        });
+        mlProcess.stderr.on('data', (data) => {
+            const msg = data.toString().trim();
+            if (msg && !msg.includes('tensorflow') && !msg.includes('oneDNN')) {
+                console.log(`[ML Service] ${msg}`);
+            }
+        });
+        mlProcess.on('error', (err) => {
+            console.error('[ML Watchdog] Failed to start ML Service:', err.message);
             mlProcess = null;
             mlStarting = false;
-        }
+        });
+        mlProcess.on('exit', (code) => {
+            console.log(`[ML Watchdog] ML Service exited with code ${code}`);
+            mlProcess = null;
+            mlStarting = false;
+        });
+        setTimeout(() => { mlStarting = false; }, 15000);
+    } catch (err) {
+        console.error('[ML Watchdog] Error spawning ML Service:', err.message);
+        mlProcess = null;
+        mlStarting = false;
     }
+}
 
-    async function mlWatchdog() {
-        const running = await isMLServiceRunning();
-        if (!running && !mlStarting) {
-            console.log('[ML Watchdog] ML Service is down — restarting...');
-            startMLServiceProcess();
-        }
+async function mlWatchdog() {
+    const running = await isMLServiceRunning();
+    if (!running && !mlStarting) {
+        console.log('[ML Watchdog] ML Service is down — restarting...');
+        startMLServiceProcess();
     }
+}
 
-    // Graceful shutdown
+// Graceful shutdown
+if (SHOULD_SPAWN_ML) {
     process.on('SIGTERM', () => {
         console.log('SIGTERM received. Shutting down gracefully...');
         if (mlProcess) { try { mlProcess.kill(); } catch(e) {} }
@@ -206,23 +206,27 @@ if (SHOULD_SPAWN_ML) {
         if (mlProcess) { try { mlProcess.kill(); } catch(e) {} }
         process.exit(0);
     });
+}
 
-    // Start server in standalone mode
+// Start server in standalone mode (not serverless)
+if (!IS_SERVERLESS) {
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
 
-        // Auto-start ML Service
-        setTimeout(async () => {
-            const alreadyRunning = await isMLServiceRunning();
-            if (alreadyRunning) {
-                console.log('[ML Watchdog] ML Service is already running');
-            } else {
-                startMLServiceProcess();
-            }
-        }, 1000);
+        // Auto-start ML Service if running standalone and configured to do so
+        if (SHOULD_SPAWN_ML) {
+            setTimeout(async () => {
+                const alreadyRunning = await isMLServiceRunning();
+                if (alreadyRunning) {
+                    console.log('[ML Watchdog] ML Service is already running');
+                } else {
+                    startMLServiceProcess();
+                }
+            }, 1000);
 
-        // ML watchdog
-        setInterval(mlWatchdog, ML_WATCHDOG_INTERVAL);
+            // ML watchdog
+            setInterval(mlWatchdog, ML_WATCHDOG_INTERVAL);
+        }
 
         // Periodic notification check
         setInterval(() => {

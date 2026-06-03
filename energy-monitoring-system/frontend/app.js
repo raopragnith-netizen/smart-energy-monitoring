@@ -488,8 +488,10 @@ if (processBillBtn) {
                 if (progress > 90) clearInterval(progressInterval);
                 else {
                     billProgressFill.style.width = progress + '%';
-                    if (progress > 50) billProgressText.textContent = 'Extracting data with OCR...';
-                    if (progress > 75) billProgressText.textContent = 'Analyzing consumption patterns...';
+                    if (progress > 40) billProgressText.textContent = 'Preprocessing image...';
+                    if (progress > 55) billProgressText.textContent = 'Running PaddleOCR extraction...';
+                    if (progress > 70) billProgressText.textContent = 'Validating extracted fields...';
+                    if (progress > 85) billProgressText.textContent = 'Computing confidence scores...';
                 }
             }, 500);
 
@@ -528,63 +530,167 @@ function displayExtractionResults(data) {
     if(!data) return;
     activeExtractedData = data;
     
+    // Set field values
     document.getElementById('ext-board').value = data.electricityBoard || '';
-    document.getElementById('ext-consumer').value = data.consumerNumber || '';
-    document.getElementById('ext-month').value = data.billingMonth || '';
-    document.getElementById('ext-units').value = data.totalUnits || '';
-    document.getElementById('ext-amount').value = data.billAmount || '';
-    document.getElementById('ext-prev').value = data.previousReading || '';
-    document.getElementById('ext-curr').value = data.currentReading || '';
+    document.getElementById('ext-consumer').value = data.consumerNumber?.value ?? data.consumerNumber ?? '';
+    document.getElementById('ext-month').value = data.billingMonth?.value ?? data.billingMonth ?? '';
+    document.getElementById('ext-units').value = data.totalUnits?.value ?? data.totalUnits ?? '';
+    document.getElementById('ext-amount').value = data.billAmount?.value ?? data.billAmount ?? '';
+    document.getElementById('ext-prev').value = data.previousReading?.value ?? data.previousReading ?? '';
+    document.getElementById('ext-curr').value = data.currentReading?.value ?? data.currentReading ?? '';
     
-    // Highlight missing/suspicious fields in red
-    const fieldsToHighlight = {
-        'ext-board': data.electricityBoard,
+    // New fields
+    const billingDateEl = document.getElementById('ext-billing-date');
+    const dueDateEl = document.getElementById('ext-due-date');
+    const serviceNumEl = document.getElementById('ext-service-number');
+    if (billingDateEl) billingDateEl.value = data.billingDate?.value ?? data.billingDate ?? '';
+    if (dueDateEl) dueDateEl.value = data.dueDate?.value ?? data.dueDate ?? '';
+    if (serviceNumEl) serviceNumEl.value = data.serviceNumber?.value ?? data.serviceNumber ?? '';
+    
+    // Per-field confidence badges
+    const fieldConfMap = {
+        'ext-board': null,
         'ext-consumer': data.consumerNumber,
         'ext-month': data.billingMonth,
         'ext-units': data.totalUnits,
-        'ext-amount': data.billAmount
+        'ext-amount': data.billAmount,
+        'ext-prev': data.previousReading,
+        'ext-curr': data.currentReading,
+        'ext-billing-date': data.billingDate,
+        'ext-due-date': data.dueDate,
+        'ext-service-number': data.serviceNumber,
     };
-
-    for (const [id, val] of Object.entries(fieldsToHighlight)) {
+    
+    // Get validation data if available
+    const validation = data.validation || {};
+    
+    for (const [id, fieldData] of Object.entries(fieldConfMap)) {
         const el = document.getElementById(id);
-        if (el) {
-            if (!val || val === 0 || val === 'Unknown') {
-                el.style.border = '2px solid #ef4444';
-                el.style.backgroundColor = 'rgba(239, 68, 68, 0.05)';
-            } else {
-                el.style.border = '';
-                el.style.backgroundColor = '';
-            }
-            
-            // Remove highlight once user begins editing
-            el.addEventListener('input', function clearHighlight() {
-                el.style.border = '';
-                el.style.backgroundColor = '';
-                el.removeEventListener('input', clearHighlight);
-            });
+        if (!el) continue;
+        
+        // Remove any existing confidence badge and warnings
+        const existingBadge = el.parentElement.querySelector('.field-confidence');
+        if (existingBadge) existingBadge.remove();
+        const existingWarns = el.parentElement.querySelectorAll('.validation-warning, .validation-error');
+        existingWarns.forEach(w => w.remove());
+        
+        const rawVal = fieldData?.value ?? fieldData;
+        const conf = fieldData?.confidence;
+        
+        // Highlight missing/suspicious fields
+        if (!rawVal || rawVal === 0 || rawVal === 'Unknown') {
+            el.style.border = '2px solid #ef4444';
+            el.style.backgroundColor = 'rgba(239, 68, 68, 0.05)';
+        } else if (conf !== undefined && conf < 50) {
+            el.style.border = '2px solid #ef4444';
+            el.style.backgroundColor = 'rgba(239, 68, 68, 0.05)';
+        } else if (conf !== undefined && conf < 70) {
+            el.style.border = '2px solid #f59e0b';
+            el.style.backgroundColor = 'rgba(245, 158, 11, 0.05)';
+        } else {
+            el.style.border = '';
+            el.style.backgroundColor = '';
         }
+        
+        // Add confidence badge if available
+        if (conf !== undefined) {
+            const badge = document.createElement('span');
+            let confClass = 'conf-high';
+            let confIcon = '✓';
+            if (conf < 50) { confClass = 'conf-low'; confIcon = '✗'; }
+            else if (conf < 70) { confClass = 'conf-medium'; confIcon = '~'; }
+            badge.className = `field-confidence ${confClass} just-loaded`;
+            badge.innerHTML = `<span class="conf-icon">${confIcon}</span> ${conf}%`;
+            el.parentElement.appendChild(badge);
+            setTimeout(() => badge.classList.remove('just-loaded'), 600);
+        }
+        
+        // Add validation warnings
+        const fieldName = {
+            'ext-consumer': 'consumer_number',
+            'ext-month': 'billing_month',
+            'ext-units': 'total_units',
+            'ext-amount': 'bill_amount',
+            'ext-prev': 'previous_reading',
+            'ext-curr': 'current_reading',
+            'ext-billing-date': 'billing_date',
+            'ext-due-date': 'due_date',
+            'ext-service-number': 'service_number',
+        }[id];
+        
+        const fieldValidation = validation[fieldName];
+        if (fieldValidation) {
+            if (fieldValidation.errors) {
+                fieldValidation.errors.forEach(err => {
+                    const warn = document.createElement('span');
+                    warn.className = 'validation-error';
+                    warn.textContent = '✗ ' + err;
+                    el.parentElement.appendChild(warn);
+                });
+            }
+            if (fieldValidation.warnings) {
+                fieldValidation.warnings.forEach(w => {
+                    const warn = document.createElement('span');
+                    warn.className = 'validation-warning';
+                    warn.textContent = '⚠ ' + w;
+                    el.parentElement.appendChild(warn);
+                });
+            }
+        }
+        
+        // Remove highlight once user begins editing
+        el.addEventListener('input', function clearHighlight() {
+            el.style.border = '';
+            el.style.backgroundColor = '';
+            el.removeEventListener('input', clearHighlight);
+        });
     }
 
+    // Overall confidence display
     const confEl = document.getElementById('ext-confidence');
-    const confText = (data.confidence || 'medium').toUpperCase();
-    const confScore = data.confidence_score ? ` (${data.confidence_score}%)` : '';
-    confEl.textContent = confText + confScore;
+    const overallConf = data.overall_confidence ?? data.confidence_score ?? 50;
+    const confLabel = (data.overall_confidence_label || data.confidence || 'medium').toUpperCase();
+    confEl.textContent = `${confLabel} (${overallConf}%)`;
     confEl.className = 'extract-value';
-    if(data.confidence === 'high') confEl.className = 'extract-value conf-high';
-    else if(data.confidence === 'low') confEl.className = 'extract-value conf-low';
+    if (overallConf >= 70) confEl.className = 'extract-value conf-high';
+    else if (overallConf >= 40) confEl.className = 'extract-value conf-medium';
+    else confEl.className = 'extract-value conf-low';
     
+    // OCR engine badge
+    let engineHtml = '';
+    if (data.ocr_engine) {
+        engineHtml = `<span class="ocr-engine-badge">⚡ ${data.ocr_engine}</span> `;
+    }
+    
+    // Image quality bar
+    let qualityHtml = '';
+    if (data.image_quality && data.image_quality.score !== undefined) {
+        const qs = data.image_quality.score;
+        const qClass = qs >= 70 ? 'good' : qs >= 40 ? 'fair' : 'poor';
+        const qLabel = qs >= 70 ? 'Good' : qs >= 40 ? 'Fair' : 'Poor';
+        qualityHtml = `
+            <div style="margin-bottom: 8px;">
+                <span style="font-size: 12px; color: #94a3b8;">Image Quality: ${qLabel} (${qs}%)</span>
+                <div class="image-quality-bar"><div class="fill ${qClass}" style="width: ${qs}%"></div></div>
+            </div>
+        `;
+    }
+    
+    // Warning / success message
     let warningHtml = '';
-    if (data.confidence === 'low') {
+    if (overallConf < 40) {
         warningHtml = `
+            ${qualityHtml}
             <div style="background: rgba(239, 68, 68, 0.1); padding: 12px; border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 12px;">
-                <p style="margin: 0; color: #ef4444; font-weight: 600;">⚠ Low Confidence Extraction</p>
+                <p style="margin: 0; color: #ef4444; font-weight: 600;">⚠ Low Confidence Extraction ${engineHtml}</p>
                 <p style="margin: 4px 0 0; font-size: 13px; color: #94a3b8;">Some fields could not be extracted reliably. Please verify the values highlighted in red above and correct any mistakes before saving.</p>
             </div>
         `;
     } else {
         warningHtml = `
+            ${qualityHtml}
             <div style="background: rgba(16, 185, 129, 0.1); padding: 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2); margin-bottom: 12px;">
-                <p style="margin: 0; color: #10b981; font-weight: 600;">✓ Verification Required</p>
+                <p style="margin: 0; color: #10b981; font-weight: 600;">✓ Verification Required ${engineHtml}</p>
                 <p style="margin: 4px 0 0; font-size: 13px; color: #94a3b8;">Review the extracted data. You can manually edit any field if it's incorrect.</p>
             </div>
         `;
@@ -614,10 +720,13 @@ if (confirmBillBtn) {
             previousReading: parseFloat(document.getElementById('ext-prev').value) || 0,
             currentReading: parseFloat(document.getElementById('ext-curr').value) || 0,
             electricityBoard: document.getElementById('ext-board').value,
-            originalFileName: activeExtractedData.originalFileName,
-            fileType: activeExtractedData.fileType,
-            extractionConfidence: activeExtractedData.confidence,
-            rawTextLength: activeExtractedData.rawTextLength
+            billingDate: document.getElementById('ext-billing-date') ? document.getElementById('ext-billing-date').value : '',
+            dueDate: document.getElementById('ext-due-date') ? document.getElementById('ext-due-date').value : '',
+            serviceNumber: document.getElementById('ext-service-number') ? document.getElementById('ext-service-number').value : '',
+            originalFileName: activeExtractedData.originalFileName || activeExtractedData.original_file_name,
+            fileType: activeExtractedData.fileType || activeExtractedData.file_type,
+            extractionConfidence: activeExtractedData.overall_confidence_label || activeExtractedData.confidence,
+            rawTextLength: activeExtractedData.rawTextLength || activeExtractedData.raw_text_length
         };
         
         try {
