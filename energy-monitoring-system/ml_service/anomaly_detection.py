@@ -1,5 +1,5 @@
 """
-anomaly_detection.py — Enhanced anomaly detection module.
+anomaly_detection.py — Enhanced anomaly detection module (Supabase Version).
 
 Uses Isolation Forest with rolling window statistics to detect unusual
 consumption patterns. Adds severity classification (critical/warning/mild)
@@ -20,18 +20,20 @@ def detect_abnormalities(db):
     - Deviation percentage for UI visualization
 
     Args:
-        db: PyMongo database instance.
+        db: Supabase Client instance.
 
     Returns:
         list: Anomaly dicts with date, units, expected_units, severity,
               deviation_pct, and rolling stats.
     """
-    cursor = db.energydatas.find().sort('date', 1)
-    data = list(cursor)
+    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    data = res.data or []
     if not data or len(data) < 7:
         return []
 
     df = pd.DataFrame(data)
+    df['units'] = df['units'].astype(float)
+    df['date'] = pd.to_datetime(df['date'])
 
     # Compute rolling statistics for contextual baselines
     df['rolling_mean_7'] = df['units'].rolling(window=7, min_periods=3).mean()
@@ -46,7 +48,6 @@ def detect_abnormalities(db):
     feature_cols.append('ratio_to_mean')
 
     # Use Isolation Forest with 'auto' contamination for dynamic behavior
-    # This prevents the "always 5%" issue.
     iso_forest = IsolationForest(
         contamination='auto',
         n_estimators=150,
@@ -59,7 +60,6 @@ def detect_abnormalities(db):
 
     # Filter anomalies (score == -1) 
     # AND add a statistical filter: must be > 2.5 std devs or > 50% from rolling mean
-    # to avoid flagging tiny variations as anomalies.
     anomalies = df[
         (df['anomaly_score'] == -1) & 
         ((abs(df['units'] - df['rolling_mean_7']) > 2.5 * df['rolling_std_7']) | 
@@ -67,13 +67,11 @@ def detect_abnormalities(db):
     ].copy()
 
     # Clear previous anomaly records and flags
-    db.anomalies.delete_many({})
-    db.energydatas.update_many({}, {'$set': {'anomaly': False}})
+    db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+    db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
 
     anomaly_records = []
-    overall_mean = df['units'].mean()
-    overall_std = df['units'].std()
-
+    
     for _, row in anomalies.iterrows():
         expected = row['rolling_mean_7']
         deviation = row['units'] - expected
@@ -88,7 +86,7 @@ def detect_abnormalities(db):
             severity = 'mild'
 
         rec = {
-            "date": row['date'],
+            "date": row['date'].isoformat(),
             "units": float(row['units']),
             "expected_units": float(expected),
             "deviation_pct": float(round(deviation_pct, 1)),
@@ -100,20 +98,23 @@ def detect_abnormalities(db):
         anomaly_records.append(rec)
 
         # Flag in original data
-        db.energydatas.update_one(
-            {'_id': row['_id']},
-            {'$set': {'anomaly': True, 'anomaly_severity': severity}}
-        )
+        db.table('energy_data').update({
+            'anomaly': True,
+            'anomaly_severity': severity
+        }).eq('id', row['id']).execute()
 
     if anomaly_records:
-        db.anomalies.insert_many(anomaly_records)
+        db.table('anomalies').insert(anomaly_records).execute()
 
     # Return formatted list (dates as strings)
     result = []
     for r in anomaly_records:
-        r.pop('_id', None)
+        date_str = r['date']
+        if 'T' in date_str:
+            date_str = date_str.split('T')[0]
+            
         result.append({
-            "date": r["date"].strftime("%Y-%m-%d"),
+            "date": date_str,
             "units": r["units"],
             "expected_units": r["expected_units"],
             "deviation_pct": r["deviation_pct"],

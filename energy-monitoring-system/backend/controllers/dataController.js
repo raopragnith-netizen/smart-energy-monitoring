@@ -1,10 +1,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const EnergyData = require('../../database/models/EnergyData');
-const Recommendation = require('../../database/models/Recommendation');
-const Anomaly = require('../../database/models/Anomaly');
-const Prediction = require('../../database/models/Prediction');
+const { supabase } = require('../utils/supabase');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
 
@@ -91,17 +88,32 @@ exports.getRecommendations = async (req, res) => {
         } catch (mlErr) {
             // Fallback: generate recommendations purely from database (no ML service needed)
             try {
-                const recentData = await EnergyData.find().sort({ date: -1 }).limit(30);
-                const latestPred = await Prediction.findOne().sort({ createdAt: -1 });
-                const predicted_units = latestPred ? latestPred.predicted_units : 0;
+                const { data: recentData } = await supabase
+                    .from('energy_data')
+                    .select('*')
+                    .order('date', { ascending: false })
+                    .limit(30);
+
+                const { data: latestPred } = await supabase
+                    .from('predictions')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                const predicted_units = latestPred ? parseFloat(latestPred.predicted_units) : 0;
                 const threshold = 15;
 
-                if (recentData.length > 0) {
-                    const avg = recentData.reduce((sum, d) => sum + d.units, 0) / recentData.length;
-                    const latest = recentData[0].units;
+                if (recentData && recentData.length > 0) {
+                    const avg = recentData.reduce((sum, d) => sum + parseFloat(d.units), 0) / recentData.length;
+                    const latest = parseFloat(recentData[0].units);
 
                     if (latest > avg * 1.3) {
-                        suggestions.push({ message: `Your latest usage (${latest.toFixed(1)} units) is ${(((latest - avg) / avg) * 100).toFixed(0)}% above your average. Consider reducing heavy appliance use.`, type: 'Trend', priority: 'high' });
+                        suggestions.push({ 
+                            message: `Your latest usage (${latest.toFixed(1)} units) is ${(((latest - avg) / avg) * 100).toFixed(0)}% above your average. Consider reducing heavy appliance use.`, 
+                            type: 'Trend', 
+                            priority: 'high' 
+                        });
                     }
                 }
 
@@ -130,36 +142,75 @@ exports.getRecommendations = async (req, res) => {
 
 exports.getHistoricalData = async (req, res) => {
     try {
-        const data = await EnergyData.find().sort({ date: -1 }).limit(100);
-        res.status(200).json({ success: true, data: data.reverse() });
+        const { data, error } = await supabase
+            .from('energy_data')
+            .select('*')
+            .order('date', { ascending: false })
+            .limit(100);
+
+        if (error) throw error;
+        
+        // Reverse to restore chronological order (ascending) and map structure
+        const mappedData = (data || []).reverse().map(d => ({
+            id: d.id,
+            date: d.date,
+            units: parseFloat(d.units),
+            predicted_units: d.predicted_units ? parseFloat(d.predicted_units) : null,
+            anomaly: d.anomaly,
+            source: d.source,
+            createdAt: d.created_at,
+            updatedAt: d.updated_at
+        }));
+
+        res.status(200).json({ success: true, data: mappedData });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Error fetching historical data.' });
     }
 };
 
-// ===== NEW ENDPOINTS =====
-
 // Real-time status for dashboard polling
 exports.getRealtimeStatus = async (req, res) => {
     try {
-        const latestData = await EnergyData.find().sort({ date: -1 }).limit(7);
-        const latestPrediction = await Prediction.findOne().sort({ createdAt: -1 });
-        const anomalyCount = await Anomaly.countDocuments();
-        const allData = await EnergyData.find().sort({ date: -1 }).limit(30);
+        const { data: latestData, error: dataErr } = await supabase
+            .from('energy_data')
+            .select('*')
+            .order('date', { ascending: false })
+            .limit(7);
+        if (dataErr) throw dataErr;
 
-        const currentUsage = latestData.length > 0 ? latestData[0].units : 0;
-        const dailyAvg = latestData.length > 0
-            ? latestData.reduce((sum, d) => sum + d.units, 0) / latestData.length
+        const { data: latestPrediction, error: predErr } = await supabase
+            .from('predictions')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (predErr) throw predErr;
+
+        const { count: anomalyCount, error: anomErr } = await supabase
+            .from('anomalies')
+            .select('*', { count: 'exact', head: true });
+        if (anomErr) throw anomErr;
+
+        const { data: allData, error: allErr } = await supabase
+            .from('energy_data')
+            .select('*')
+            .order('date', { ascending: false })
+            .limit(30);
+        if (allErr) throw allErr;
+
+        const currentUsage = latestData && latestData.length > 0 ? parseFloat(latestData[0].units) : 0;
+        const dailyAvg = latestData && latestData.length > 0
+            ? latestData.reduce((sum, d) => sum + parseFloat(d.units), 0) / latestData.length
             : 0;
-        const weeklyTotal = latestData.reduce((sum, d) => sum + d.units, 0);
-        const predicted = latestPrediction ? latestPrediction.predicted_units : 0;
+        const weeklyTotal = latestData ? latestData.reduce((sum, d) => sum + parseFloat(d.units), 0) : 0;
+        const predicted = latestPrediction ? parseFloat(latestPrediction.predicted_units) : 0;
 
-        // Calculate hourly trend (mock: use recent data points as proxy)
-        const last24 = allData.slice(0, Math.min(24, allData.length)).reverse();
+        // Calculate hourly trend (use recent data points as proxy)
+        const last24 = (allData || []).slice(0, Math.min(24, allData.length)).reverse();
         const hourlyTrend = last24.map(d => ({
             date: d.date,
-            units: d.units,
+            units: parseFloat(d.units),
             anomaly: d.anomaly || false
         }));
 
@@ -170,7 +221,7 @@ exports.getRealtimeStatus = async (req, res) => {
                 predictedUsage: parseFloat(predicted.toFixed(2)),
                 dailyAvg: parseFloat(dailyAvg.toFixed(2)),
                 weeklyTotal: parseFloat(weeklyTotal.toFixed(2)),
-                anomalyCount,
+                anomalyCount: anomalyCount || 0,
                 hourlyTrend,
                 lastUpdated: new Date().toISOString()
             }
@@ -184,31 +235,46 @@ exports.getRealtimeStatus = async (req, res) => {
 // Enhanced historical data with anomaly flags and predictions overlaid
 exports.getEnhancedHistorical = async (req, res) => {
     try {
-        const historicalData = await EnergyData.find().sort({ date: -1 }).limit(200);
-        // Reverse to restore chronological order (ascending)
-        historicalData.reverse();
+        const { data: historicalData, error: histErr } = await supabase
+            .from('energy_data')
+            .select('*')
+            .order('date', { ascending: false })
+            .limit(200);
+        if (histErr) throw histErr;
 
-        const predictions = await Prediction.find().sort({ targetDate: 1 });
-        const anomalies = await Anomaly.find().sort({ date: 1 });
+        // Reverse to restore chronological order (ascending)
+        const sortedHistory = (historicalData || []).reverse();
+
+        const { data: predictions, error: predErr } = await supabase
+            .from('predictions')
+            .select('*')
+            .order('target_date', { ascending: true });
+        if (predErr) throw predErr;
+
+        const { data: anomalies, error: anomErr } = await supabase
+            .from('anomalies')
+            .select('*')
+            .order('date', { ascending: true });
+        if (anomErr) throw anomErr;
 
         // Build prediction map for quick lookup
         const predMap = {};
-        predictions.forEach(p => {
-            const key = new Date(p.targetDate).toISOString().split('T')[0];
-            predMap[key] = p.predicted_units;
+        (predictions || []).forEach(p => {
+            const key = new Date(p.target_date).toISOString().split('T')[0];
+            predMap[key] = parseFloat(p.predicted_units);
         });
 
         // Build anomaly set for quick lookup
         const anomalySet = new Set();
-        anomalies.forEach(a => {
+        (anomalies || []).forEach(a => {
             anomalySet.add(new Date(a.date).toISOString().split('T')[0]);
         });
 
-        const enhanced = historicalData.map(d => {
+        const enhanced = sortedHistory.map(d => {
             const dateKey = new Date(d.date).toISOString().split('T')[0];
             return {
                 date: d.date,
-                units: d.units,
+                units: parseFloat(d.units),
                 predicted_units: predMap[dateKey] || null,
                 isAnomaly: d.anomaly || anomalySet.has(dateKey)
             };

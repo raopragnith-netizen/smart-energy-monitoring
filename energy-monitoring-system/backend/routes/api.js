@@ -6,8 +6,7 @@ const fs = require('fs');
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) { fs.mkdirSync(uploadsDir, { recursive: true }); }
 const dataController = require('../controllers/dataController');
-const ActivityLog = require('../../database/models/ActivityLog');
-const BillRecord = require('../../database/models/BillRecord');
+const { supabase } = require('../utils/supabase');
 const axios = require('axios');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
@@ -124,8 +123,34 @@ router.post('/confirm-bill', async (req, res) => {
 
 router.get('/bill-history', async (req, res) => {
     try {
-        const records = await BillRecord.find().sort({ createdAt: -1 }).limit(50);
-        res.json({ success: true, records });
+        const { data: records, error } = await supabase
+            .from('bill_records')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50);
+        if (error) throw error;
+        
+        const mappedRecords = (records || []).map(r => ({
+            id: r.id,
+            userId: r.user_id,
+            consumerNumber: r.consumer_number,
+            billingMonth: r.billing_month,
+            totalUnits: r.total_units,
+            billAmount: r.bill_amount,
+            previousReading: r.previous_reading,
+            currentReading: r.current_reading,
+            electricityBoard: r.electricity_board,
+            originalFileName: r.original_file_name,
+            fileType: r.file_type,
+            extractionConfidence: r.extraction_confidence,
+            rawTextLength: r.raw_text_length,
+            status: r.status,
+            errorMessage: r.error_message,
+            generatedRecords: r.generated_records,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at
+        }));
+        res.json({ success: true, records: mappedRecords });
     } catch (error) {
         // Fallback: try ML service directly
         try {
@@ -141,9 +166,29 @@ router.get('/bill-history', async (req, res) => {
 router.get('/activity-log', async (req, res) => {
     try {
         const userId = req.query.userId;
-        const query = userId ? { userId } : {};
-        const logs = await ActivityLog.find(query).sort({ timestamp: -1 }).limit(30);
-        res.json({ success: true, data: logs });
+        let query = supabase
+            .from('activity_logs')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .limit(30);
+        
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+        
+        const { data: logs, error } = await query;
+        if (error) throw error;
+        
+        const mappedLogs = (logs || []).map(l => ({
+            id: l.id,
+            userId: l.user_id,
+            action: l.action,
+            details: l.details,
+            timestamp: l.timestamp,
+            createdAt: l.created_at,
+            updatedAt: l.updated_at
+        }));
+        res.json({ success: true, data: mappedLogs });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { connectDB, mongoose } = require('../database/mongo_connection');
+const { supabase } = require('./utils/supabase');
 const apiRoutes = require('./routes/api');
 const authRoutes = require('./routes/auth');
 const notificationRoutes = require('./routes/notification');
@@ -18,8 +18,20 @@ if (!fs.existsSync(uploadsDir)) { fs.mkdirSync(uploadsDir, { recursive: true });
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Connect to MongoDB
-connectDB();
+// Check Supabase connection on startup
+async function checkSupabaseConnection() {
+    try {
+        const { data, error } = await supabase.from('users').select('id').limit(1);
+        if (error && error.code !== 'PGRST116') {
+            console.error('[Supabase] Connection verification failed:', error.message);
+        } else {
+            console.log('[Supabase] Connection verified successfully.');
+        }
+    } catch (err) {
+        console.error('[Supabase] Connection error:', err.message);
+    }
+}
+checkSupabaseConnection();
 
 // Middleware
 app.use(cors());
@@ -70,8 +82,16 @@ app.get('/health', async (req, res) => {
 
 // Comprehensive status endpoint — checks all services
 app.get('/status', async (req, res) => {
-    const dbState = mongoose.connection.readyState;
-    const dbStatusMap = { 0: 'Disconnected', 1: 'Connected', 2: 'Connecting', 3: 'Disconnecting' };
+    // Check database connection
+    let dbStatus = 'Disconnected';
+    try {
+        const { error } = await supabase.from('users').select('id').limit(1);
+        if (!error || error.code === 'PGRST116') {
+            dbStatus = 'Connected';
+        }
+    } catch {
+        dbStatus = 'Disconnected';
+    }
 
     // Check ML service
     let mlStatus = { status: 'Offline', models: {}, ocr: 'Unknown', dataRecords: 0 };
@@ -97,7 +117,7 @@ app.get('/status', async (req, res) => {
         version: '2.0',
         services: {
             backend: { status: 'Running', uptime: Math.floor(process.uptime()) + 's' },
-            database: { status: dbStatusMap[dbState] || 'Unknown' },
+            database: { status: dbStatus },
             mlService: { status: mlStatus.status, version: mlStatus.version },
             ocr: { status: mlStatus.ocr === 'ready' ? 'Active' : (mlStatus.status === 'Running' ? 'Available' : 'Unavailable') },
             models: {
@@ -149,6 +169,18 @@ const ML_WATCHDOG_INTERVAL = 30000;
 function startMLServiceProcess() {
     if (mlStarting) return;
     mlStarting = true;
+    
+    // Kill existing process if it is still referenced to avoid orphans
+    if (mlProcess) {
+        console.log('[ML Watchdog] Terminating previous ML Service process...');
+        try {
+            mlProcess.kill();
+        } catch (e) {
+            console.error('[ML Watchdog] Failed to kill previous process:', e.message);
+        }
+        mlProcess = null;
+    }
+
     console.log('[ML Watchdog] Starting ML Service...');
     try {
         mlProcess = spawn(PYTHON_PATH, ['app.py'], {
@@ -178,7 +210,8 @@ function startMLServiceProcess() {
             mlProcess = null;
             mlStarting = false;
         });
-        setTimeout(() => { mlStarting = false; }, 15000);
+        // Give ML Service 60 seconds to fully load models & PaddleOCR on CPU
+        setTimeout(() => { mlStarting = false; }, 60000);
     } catch (err) {
         console.error('[ML Watchdog] Error spawning ML Service:', err.message);
         mlProcess = null;

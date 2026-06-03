@@ -124,13 +124,12 @@ def _get_paddleocr_reader():
         ocr_logger.info("Initializing PaddleOCR reader...")
         from paddleocr import PaddleOCR
         _paddleocr_reader = PaddleOCR(
-            use_angle_cls=True,    # Automatic text angle classification
+            use_textline_orientation=True,    # Automatic text angle classification
             lang='en',
-            use_gpu=False,
-            show_log=False,
-            det_db_thresh=0.3,     # Lower threshold for better detection on bills
-            det_db_box_thresh=0.5,
-            rec_batch_num=16,
+            device='cpu',
+            text_det_thresh=0.3,     # Lower threshold for better detection on bills
+            text_det_box_thresh=0.5,
+            text_recognition_batch_size=16,
         )
         ocr_logger.info("PaddleOCR reader initialized successfully.")
     return _paddleocr_reader

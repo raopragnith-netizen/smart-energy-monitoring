@@ -1,9 +1,9 @@
 """
-predict.py — Energy consumption prediction module.
+predict.py — Energy consumption prediction module (Supabase Version).
 
 Provides single-day and 7-day iterative forecasting using a trained LSTM model.
 Falls back to Linear Regression when LSTM is unavailable.
-Predictions are saved to MongoDB for downstream use (dashboard, notifications).
+Predictions are saved to Supabase for downstream use (dashboard, notifications).
 """
 
 import pandas as pd
@@ -49,13 +49,13 @@ def load_lr(force_reload=False):
 
 def _fallback_prediction(db, days=1):
     """Generate a simple moving-average fallback prediction."""
-    cursor = db.energydatas.find().sort('date', -1).limit(14)
-    data = list(cursor)
+    res = db.table('energy_data').select('*').order('date', desc=True).limit(14).execute()
+    data = res.data or []
     if not data:
         return []
 
-    avg = sum(d['units'] for d in data) / len(data)
-    last_date = data[0]['date']
+    avg = sum(float(d['units']) for d in data) / len(data)
+    last_date = pd.to_datetime(data[0]['date'])
 
     predictions = []
     day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday',
@@ -69,13 +69,13 @@ def _fallback_prediction(db, days=1):
         pred_units = round(max(0.1, avg * variation), 2)
 
         pred_doc = {
-            "targetDate": target_date,
-            "predicted_units": pred_units,
-            "dayName": day_names[target_date.weekday()],
-            "modelUsed": "MovingAverage",
-            "predictionType": "weekly" if days > 1 else "single"
+            "target_date": target_date.isoformat(),
+            "predicted_units": float(pred_units),
+            "day_name": day_names[target_date.weekday()],
+            "model_used": "MovingAverage",
+            "prediction_type": "weekly" if days > 1 else "single"
         }
-        db.predictions.insert_one(pred_doc)
+        db.table('predictions').insert(pred_doc).execute()
 
         predictions.append({
             "targetDate": target_date.strftime("%Y-%m-%d"),
@@ -94,14 +94,16 @@ def generate_predictions(db):
     """
     model, scaler = load_lstm()
 
-    cursor = db.energydatas.find().sort('date', 1)
-    data = list(cursor)
+    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    data = res.data or []
     if len(data) < 7:
         if len(data) > 0:
             return _fallback_prediction(db, days=1)
         return []
 
     df = pd.DataFrame(data)
+    df['units'] = df['units'].astype(float)
+    df['date'] = pd.to_datetime(df['date'])
 
     # LSTM prediction
     if model is not None and scaler is not None:
@@ -118,11 +120,12 @@ def generate_predictions(db):
             next_date = last_date + timedelta(days=1)
 
             pred_doc = {
-                "targetDate": next_date,
-                "predicted_units": pred_units,
-                "modelUsed": "LSTM"
+                "target_date": next_date.isoformat(),
+                "predicted_units": float(pred_units),
+                "model_used": "LSTM",
+                "prediction_type": "single"
             }
-            db.predictions.insert_one(pred_doc)
+            db.table('predictions').insert(pred_doc).execute()
 
             return [{
                 "targetDate": next_date.strftime("%Y-%m-%d"),
@@ -144,14 +147,16 @@ def generate_weekly_predictions(db):
     """
     model, scaler = load_lstm()
 
-    cursor = db.energydatas.find().sort('date', 1)
-    data = list(cursor)
+    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    data = res.data or []
     if len(data) < 7:
         if len(data) > 0:
             return _fallback_prediction(db, days=7)
         return []
 
     df = pd.DataFrame(data)
+    df['units'] = df['units'].astype(float)
+    df['date'] = pd.to_datetime(df['date'])
 
     # LSTM rolling prediction
     if model is not None and scaler is not None:
@@ -179,13 +184,13 @@ def generate_weekly_predictions(db):
                 day_name = day_names[target_date.weekday()]
 
                 pred_doc = {
-                    "targetDate": target_date,
-                    "predicted_units": pred_units,
-                    "dayName": day_name,
-                    "modelUsed": "LSTM",
-                    "predictionType": "weekly"
+                    "target_date": target_date.isoformat(),
+                    "predicted_units": float(pred_units),
+                    "day_name": day_name,
+                    "model_used": "LSTM",
+                    "prediction_type": "weekly"
                 }
-                db.predictions.insert_one(pred_doc)
+                db.table('predictions').insert(pred_doc).execute()
 
                 predictions.append({
                     "targetDate": target_date.strftime("%Y-%m-%d"),

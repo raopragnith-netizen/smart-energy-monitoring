@@ -1,5 +1,5 @@
 """
-train_model.py — Model training pipeline for energy consumption prediction.
+train_model.py — Model training pipeline for energy consumption prediction (Supabase Version).
 
 Trains both a Linear Regression baseline and an LSTM deep learning model
 on historical energy consumption data. Saves trained models and scalers
@@ -22,13 +22,13 @@ def train_all_models(db):
     """Train all ML models on historical energy data.
 
     Pipeline:
-    1. Fetch and validate data from MongoDB
+    1. Fetch and validate data from Supabase
     2. Train Linear Regression with engineered features (lag, weekday, etc.)
     3. Train LSTM with 7-day lookback window on scaled data
     4. Save models, scalers, and return training metrics
 
     Args:
-        db: PyMongo database instance.
+        db: Supabase Client instance.
 
     Returns:
         dict: Training metrics (MSE, MAE, R² for each model).
@@ -39,12 +39,13 @@ def train_all_models(db):
     metrics = {}
 
     # Fetch data
-    cursor = db.energydatas.find().sort('date', 1)
-    data = list(cursor)
+    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    data = res.data or []
     if not data:
         raise ValueError("No data found to train models.")
 
     df = pd.DataFrame(data)
+    df['units'] = df['units'].astype(float)
     df = prepare_features(df)
 
     if len(df) < 10:

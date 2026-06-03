@@ -1,8 +1,5 @@
 const nodemailer = require('nodemailer');
-const User = require('../../database/models/User');
-const NotificationLog = require('../../database/models/NotificationLog');
-const EnergyData = require('../../database/models/EnergyData');
-const Anomaly = require('../../database/models/Anomaly');
+const { supabase } = require('../utils/supabase');
 
 // Create reusable transporter
 function createTransporter() {
@@ -89,35 +86,52 @@ function buildEmailBody(type, data) {
 // Send an alert — ALWAYS stores in-app, optionally sends email
 async function sendAlert(userId, type, messageText, extraData = {}) {
     try {
-        const user = await User.findById(userId);
+        const { data: user, error: userErr } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (userErr) throw userErr;
         if (!user) return { sent: false, reason: 'User not found' };
 
         // Check if we already sent this type of alert today (prevent spam)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const existingLog = await NotificationLog.findOne({
-            userId,
-            type,
-            sentAt: { $gte: today }
-        });
+        const { data: existingLog, error: logErr } = await supabase
+            .from('notification_logs')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('type', type)
+            .gte('sent_at', today.toISOString())
+            .maybeSingle();
+
+        if (logErr) throw logErr;
+
         if (existingLog && type !== 'test') {
             return { sent: false, reason: 'Already notified today for this type' };
         }
 
         // ALWAYS store as in-app notification
-        const logEntry = await NotificationLog.create({
-            userId,
-            type,
-            message: messageText,
-            inApp: true,
-            read: false,
-            emailSentTo: null
-        });
+        const { data: logEntry, error: insertErr } = await supabase
+            .from('notification_logs')
+            .insert({
+                user_id: userId,
+                type,
+                message: messageText,
+                in_app: true,
+                read: false,
+                email_sent_to: null
+            })
+            .select()
+            .single();
+
+        if (insertErr) throw insertErr;
 
         // Try sending email if notifications are enabled and SMTP is configured
         let emailSent = false;
-        if (user.notificationsEnabled && isSmtpConfigured()) {
-            const toEmail = user.notificationEmail || user.email;
+        if (user.notifications_enabled && isSmtpConfigured()) {
+            const toEmail = user.notification_email || user.email;
             if (toEmail) {
                 try {
                     const transporter = createTransporter();
@@ -139,8 +153,12 @@ async function sendAlert(userId, type, messageText, extraData = {}) {
                     });
 
                     // Update log with email info
-                    logEntry.emailSentTo = toEmail;
-                    await logEntry.save();
+                    const { error: updateErr } = await supabase
+                        .from('notification_logs')
+                        .update({ email_sent_to: toEmail })
+                        .eq('id', logEntry.id);
+                    
+                    if (updateErr) throw updateErr;
                     emailSent = true;
                 } catch (emailErr) {
                     console.error('Email send error (in-app notification still stored):', emailErr.message);
@@ -148,7 +166,7 @@ async function sendAlert(userId, type, messageText, extraData = {}) {
             }
         }
 
-        return { sent: true, inApp: true, emailSent, id: logEntry._id };
+        return { sent: true, inApp: true, emailSent, id: logEntry.id };
     } catch (err) {
         console.error('sendAlert error:', err.message);
         return { sent: false, reason: err.message };
@@ -158,24 +176,33 @@ async function sendAlert(userId, type, messageText, extraData = {}) {
 // Check all users and send notifications if triggers are met
 async function checkAndNotify() {
     try {
-        const users = await User.find();
+        const { data: users, error: userErr } = await supabase.from('users').select('*');
+        if (userErr) throw userErr;
+        if (!users || users.length === 0) return [];
+
         const results = [];
 
         for (const user of users) {
             // Get recent energy data
-            const recentData = await EnergyData.find().sort({ date: -1 }).limit(30);
-            if (recentData.length < 7) continue;
+            const { data: recentData, error: dataErr } = await supabase
+                .from('energy_data')
+                .select('*')
+                .order('date', { ascending: false })
+                .limit(30);
+
+            if (dataErr) throw dataErr;
+            if (!recentData || recentData.length < 7) continue;
 
             const last7 = recentData.slice(0, 7);
-            const avg7 = last7.reduce((sum, d) => sum + d.units, 0) / last7.length;
+            const avg7 = last7.reduce((sum, d) => sum + parseFloat(d.units), 0) / last7.length;
             const latest = recentData[0];
 
             // 1. Spike detection: current > 1.5x average
-            if (latest && latest.units > avg7 * 1.5) {
-                const result = await sendAlert(user._id, 'spike', `Unusual spike: ${latest.units.toFixed(2)} units (avg: ${avg7.toFixed(2)})`, {
-                    currentUsage: latest.units,
+            if (latest && parseFloat(latest.units) > avg7 * 1.5) {
+                const result = await sendAlert(user.id, 'spike', `Unusual spike: ${parseFloat(latest.units).toFixed(2)} units (avg: ${avg7.toFixed(2)})`, {
+                    currentUsage: parseFloat(latest.units),
                     average: avg7,
-                    percentAbove: ((latest.units - avg7) / avg7) * 100,
+                    percentAbove: ((parseFloat(latest.units) - avg7) / avg7) * 100,
                     recommendations: [
                         'Reduce AC usage by 1 hour during peak afternoon hours',
                         'Shift washing machine usage to off-peak hours (10pm-6am)',
@@ -186,18 +213,19 @@ async function checkAndNotify() {
             }
 
             // 2. Budget threshold: projected monthly > budget
-            if (user.budgetLimit > 0) {
+            const budgetLimit = parseFloat(user.budget_limit || 0);
+            if (budgetLimit > 0) {
                 const daysInMonth = 30;
-                const avgDaily = last7.reduce((sum, d) => sum + d.units, 0) / 7;
+                const avgDaily = last7.reduce((sum, d) => sum + parseFloat(d.units), 0) / 7;
                 const projected = avgDaily * daysInMonth;
 
                 // Alert at 100%
-                if (projected > user.budgetLimit) {
-                    const result = await sendAlert(user._id, 'budget', `⚠ Budget exceeded! Projected: ${projected.toFixed(1)} units (Limit: ${user.budgetLimit} units)`, {
+                if (projected > budgetLimit) {
+                    const result = await sendAlert(user.id, 'budget', `⚠ Budget exceeded! Projected: ${projected.toFixed(1)} units (Limit: ${budgetLimit} units)`, {
                         projected,
-                        budgetLimit: user.budgetLimit,
+                        budgetLimit,
                         recommendations: [
-                            `Your daily average is ${avgDaily.toFixed(1)} units — try reducing to ${(user.budgetLimit / daysInMonth).toFixed(1)} units/day`,
+                            `Your daily average is ${avgDaily.toFixed(1)} units — try reducing to ${(budgetLimit / daysInMonth).toFixed(1)} units/day`,
                             'Set appliance timers to avoid idle power consumption',
                             'Consider energy-efficient settings on high-consumption devices'
                         ]
@@ -205,12 +233,12 @@ async function checkAndNotify() {
                     results.push({ user: user.username, type: 'budget', ...result });
                 }
                 // Warning at 80%
-                else if (projected > user.budgetLimit * 0.8) {
-                    const result = await sendAlert(user._id, 'budget_warning', `Budget warning: Projected ${projected.toFixed(1)} units is at ${((projected / user.budgetLimit) * 100).toFixed(0)}% of your limit`, {
+                else if (projected > budgetLimit * 0.8) {
+                    const result = await sendAlert(user.id, 'budget_warning', `Budget warning: Projected ${projected.toFixed(1)} units is at ${((projected / budgetLimit) * 100).toFixed(0)}% of your limit`, {
                         projected,
-                        budgetLimit: user.budgetLimit,
+                        budgetLimit,
                         recommendations: [
-                            `You're at ${((projected / user.budgetLimit) * 100).toFixed(0)}% of budget — reduce usage to stay on track`,
+                            `You're at ${((projected / budgetLimit) * 100).toFixed(0)}% of budget — reduce usage to stay on track`,
                             'Shift heavy appliance usage to off-peak hours'
                         ]
                     });
@@ -219,9 +247,16 @@ async function checkAndNotify() {
             }
 
             // 3. Anomaly detection trigger
-            const recentAnomalies = await Anomaly.find().sort({ createdAt: -1 }).limit(5);
-            if (recentAnomalies.length > 0) {
-                const result = await sendAlert(user._id, 'anomaly', `${recentAnomalies.length} anomalies detected in recent energy usage`, {
+            const { data: recentAnomalies, error: anomErr } = await supabase
+                .from('anomalies')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            if (anomErr) throw anomErr;
+
+            if (recentAnomalies && recentAnomalies.length > 0) {
+                const result = await sendAlert(user.id, 'anomaly', `${recentAnomalies.length} anomalies detected in recent energy usage`, {
                     anomalyCount: recentAnomalies.length,
                     recommendations: [
                         'Check for faulty appliances or power surges',
@@ -277,10 +312,39 @@ exports.triggerCheck = async (req, res) => {
 exports.getHistory = async (req, res) => {
     try {
         const userId = req.query.userId;
-        const query = userId ? { userId } : {};
-        const logs = await NotificationLog.find(query).sort({ sentAt: -1 }).limit(50);
-        const unreadCount = userId ? await NotificationLog.countDocuments({ userId, read: false }) : 0;
-        res.json({ success: true, data: logs, unreadCount });
+        let query = supabase.from('notification_logs').select('*').order('sent_at', { ascending: false }).limit(50);
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+        
+        const { data: logs, error: logsErr } = await query;
+        if (logsErr) throw logsErr;
+
+        let unreadCount = 0;
+        if (userId) {
+            const { count, error: countErr } = await supabase
+                .from('notification_logs')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', userId)
+                .eq('read', false);
+            if (countErr) throw countErr;
+            unreadCount = count || 0;
+        }
+
+        const mappedLogs = (logs || []).map(l => ({
+            id: l.id,
+            userId: l.user_id,
+            type: l.type,
+            message: l.message,
+            emailSentTo: l.email_sent_to,
+            read: l.read,
+            inApp: l.in_app,
+            sentAt: l.sent_at,
+            createdAt: l.created_at,
+            updatedAt: l.updated_at
+        }));
+
+        res.json({ success: true, data: mappedLogs, unreadCount });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -291,9 +355,18 @@ exports.markRead = async (req, res) => {
     try {
         const { userId, notificationId } = req.body;
         if (notificationId) {
-            await NotificationLog.findByIdAndUpdate(notificationId, { read: true });
+            const { error } = await supabase
+                .from('notification_logs')
+                .update({ read: true })
+                .eq('id', notificationId);
+            if (error) throw error;
         } else if (userId) {
-            await NotificationLog.updateMany({ userId, read: false }, { read: true });
+            const { error } = await supabase
+                .from('notification_logs')
+                .update({ read: true })
+                .eq('user_id', userId)
+                .eq('read', false);
+            if (error) throw error;
         }
         res.json({ success: true, message: 'Notifications marked as read' });
     } catch (err) {

@@ -1,5 +1,5 @@
 """
-app.py — Flask ML Service for Smart Energy AI v2.0.
+app.py — Flask ML Service for Smart Energy AI v2.0 (Supabase Transition).
 
 Provides endpoints for:
 - CSV data processing and feature engineering
@@ -14,7 +14,8 @@ Provides endpoints for:
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pymongo import MongoClient
+from supabase import create_client, Client, ClientOptions
+import httpx
 from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
@@ -38,9 +39,9 @@ CORS(app)
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-MONGO_URI = os.environ.get('MONGODB_URI', os.environ.get('MONGO_URI', 'mongodb://127.0.0.1:27017/energy_monitoring'))
-client = MongoClient(MONGO_URI)
-db = client.get_default_database() if '/' in MONGO_URI.split('://')[-1] else client['energy_monitoring']
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+db: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(httpx_client=httpx.Client(http2=False)))
 
 # Warm up / initialize models and OCR on startup
 print("[startup] Initializing ML services...")
@@ -73,6 +74,7 @@ def process_csv():
         inserted_count = process_and_store_csv(file_path, db)
         return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
     except Exception as e:
+        traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -134,12 +136,13 @@ def monthly_projection():
         now = datetime.now()
         month_start = datetime(now.year, now.month, 1)
         
-        cursor = db.energydatas.find({'date': {'$gte': month_start}}).sort('date', 1)
-        month_data = list(cursor)
+        # Get all data for the current month
+        res_month = db.table('energy_data').select('*').gte('date', month_start.isoformat()).order('date', desc=False).execute()
+        month_data = res_month.data or []
         
         # Get last 7 days for average calculation
-        recent_cursor = db.energydatas.find().sort('date', -1).limit(7)
-        recent_data = list(recent_cursor)
+        res_recent = db.table('energy_data').select('*').order('date', desc=True).limit(7).execute()
+        recent_data = res_recent.data or []
         
         if not recent_data:
             return jsonify({
@@ -152,7 +155,7 @@ def monthly_projection():
             })
         
         # Calculate daily average from recent data
-        daily_avg = sum(d['units'] for d in recent_data) / len(recent_data)
+        daily_avg = sum(float(d['units']) for d in recent_data) / len(recent_data)
         
         # Days in current month
         if now.month == 12:
@@ -165,7 +168,7 @@ def monthly_projection():
         days_remaining = days_in_month - days_elapsed
         
         # Actual consumption so far this month
-        actual_so_far = sum(d['units'] for d in month_data)
+        actual_so_far = sum(float(d['units']) for d in month_data)
         
         # Projected total = actual so far + (daily avg × days remaining)
         projected = actual_so_far + (daily_avg * days_remaining)
@@ -197,13 +200,16 @@ def anomalies():
 def latest_prediction():
     """Return the most recent prediction for recommendation generation."""
     try:
-        latest = db.predictions.find_one(sort=[('targetDate', -1)])
+        res = db.table('predictions').select('*').order('target_date', desc=True).limit(1).execute()
+        latest = res.data[0] if res.data else None
         if not latest:
             return jsonify({"success": True, "predicted_units": 0, "current_trend": "normal"})
+        
+        predicted = float(latest.get('predicted_units', 0))
         return jsonify({
             "success": True, 
-            "predicted_units": latest.get('predicted_units', 0), 
-            "current_trend": "high" if latest.get('predicted_units', 0) > 15 else "normal"
+            "predicted_units": predicted, 
+            "current_trend": "high" if predicted > 15 else "normal"
         })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -214,20 +220,22 @@ def smart_recommendations():
     """Generate context-aware energy recommendations based on usage patterns."""
     try:
         # Get historical data
-        cursor = db.energydatas.find().sort('date', 1)
-        data = list(cursor)
+        res_hist = db.table('energy_data').select('*').order('date', desc=False).execute()
+        data = res_hist.data or []
         if not data:
             return jsonify({"success": True, "recommendations": []})
 
         df = pd.DataFrame(data)
+        df['units'] = df['units'].astype(float)
         suggestions = []
 
         avg_units = df['units'].mean()
         recent_avg = df['units'].tail(7).mean() if len(df) >= 7 else avg_units
 
         # Get latest prediction
-        latest_pred = db.predictions.find_one(sort=[('targetDate', -1)])
-        predicted = latest_pred.get('predicted_units', 0) if latest_pred else 0
+        res_pred = db.table('predictions').select('*').order('target_date', desc=True).limit(1).execute()
+        latest_pred = res_pred.data[0] if res_pred.data else None
+        predicted = float(latest_pred.get('predicted_units', 0)) if latest_pred else 0
 
         # 1. Critical spike detection
         if predicted > avg_units * 1.4:
@@ -306,7 +314,12 @@ def health():
     except:
         ocr_status = "error"
 
-    record_count = db.energydatas.count_documents({})
+    try:
+        res_count = db.table('energy_data').select('id', count='exact', head=True).execute()
+        record_count = res_count.count if res_count.count is not None else 0
+    except:
+        record_count = 0
+
     return jsonify({
         "status": "healthy",
         "service": "Smart Energy AI ML Service",
@@ -367,42 +380,42 @@ def process_bill():
         
         # ---- Step 3: Store bill record ----
         bill_record = {
-            "consumerNumber": bill_data.get('consumer_number'),
-            "billingMonth": bill_data.get('billing_month'),
-            "totalUnits": bill_data.get('total_units'),
-            "billAmount": bill_data.get('bill_amount'),
-            "previousReading": bill_data.get('previous_reading'),
-            "currentReading": bill_data.get('current_reading'),
-            "electricityBoard": bill_data.get('electricity_board', 'Unknown'),
-            "originalFileName": file.filename,
-            "fileType": "pdf" if ext == '.pdf' else "image",
-            "extractionConfidence": bill_data.get('confidence', 'medium'),
-            "rawTextLength": bill_data.get('raw_text_length', 0),
+            "user_id": "default",
+            "consumer_number": bill_data.get('consumer_number'),
+            "billing_month": bill_data.get('billing_month'),
+            "total_units": float(bill_data.get('total_units')) if bill_data.get('total_units') is not None else None,
+            "bill_amount": float(bill_data.get('bill_amount')) if bill_data.get('bill_amount') is not None else None,
+            "previous_reading": float(bill_data.get('previous_reading')) if bill_data.get('previous_reading') is not None else None,
+            "current_reading": float(bill_data.get('current_reading')) if bill_data.get('current_reading') is not None else None,
+            "electricity_board": bill_data.get('electricity_board', 'Unknown'),
+            "original_file_name": file.filename,
+            "file_type": "pdf" if ext == '.pdf' else "image",
+            "extraction_confidence": bill_data.get('confidence', 'medium'),
+            "raw_text_length": int(bill_data.get('raw_text_length', 0)),
             "status": "success" if bill_data.get('total_units') else "partial",
-            "generatedRecords": len(energy_records),
-            "createdAt": datetime.now()
+            "generated_records": len(energy_records)
         }
-        db.billrecords.insert_one(bill_record)
+        db.table('bill_records').insert(bill_record).execute()
         
         # ---- Step 4: Insert energy records ----
         if energy_records:
             records_to_insert = []
             for rec in energy_records:
                 records_to_insert.append({
-                    "date": datetime.fromisoformat(rec['date']),
+                    "date": rec['date'],
                     "units": float(rec['units']),
                     "predicted_units": None,
                     "anomaly": False,
                     "source": "bill_ocr"
                 })
-            db.energydatas.insert_many(records_to_insert)
+            db.table('energy_data').insert(records_to_insert).execute()
             print(f"[pipeline] Inserted {len(records_to_insert)} energy records into DB")
         
         # ---- Step 5: Clear stale predictions and anomalies ----
         print("[pipeline] Step 5: Clearing old predictions and anomalies")
-        db.predictions.delete_many({})
-        db.anomalies.delete_many({})
-        db.energydatas.update_many({}, {'$set': {'anomaly': False}})
+        db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
         # ---- Step 6: Auto-retrain models ----
         train_metrics = {}
@@ -433,6 +446,10 @@ def process_bill():
         except Exception as ae:
             print(f"[pipeline] Anomaly detection skipped: {ae}")
         
+        # Fetch current record count
+        res_count = db.table('energy_data').select('id', count='exact', head=True).execute()
+        dataset_size = res_count.count if res_count.count is not None else 0
+
         # Build response
         response_data = {
             "success": True,
@@ -452,11 +469,11 @@ def process_bill():
                 "trained": "status" not in train_metrics,
                 "predictionsGenerated": len(fresh_predictions),
                 "anomaliesDetected": len(fresh_anomalies),
-                "datasetSize": db.energydatas.count_documents({})
+                "datasetSize": dataset_size
             }
         }
         
-        print(f"[pipeline] Complete! Dataset now has {db.energydatas.count_documents({})} records")
+        print(f"[pipeline] Complete! Dataset now has {dataset_size} records")
         return jsonify(response_data)
         
     except ValueError as ve:
@@ -489,11 +506,13 @@ def full_pipeline():
     """
     try:
         # Clear stale predictions and anomalies
-        db.predictions.delete_many({})
-        db.anomalies.delete_many({})
-        db.energydatas.update_many({}, {'$set': {'anomaly': False}})
+        db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
-        record_count = db.energydatas.count_documents({})
+        res_count = db.table('energy_data').select('id', count='exact', head=True).execute()
+        record_count = res_count.count if res_count.count is not None else 0
+
         if record_count == 0:
             return jsonify({"success": False, "message": "No data to analyze. Upload data first."}), 400
         
@@ -517,10 +536,11 @@ def full_pipeline():
             print(f"[full-pipeline] Prediction error: {e}")
         
         # Anomalies
-        anomalies = []
+        anomalies_count = 0
         try:
             anomalies = detect_abnormalities(db)
-            print(f"[full-pipeline] Detected {len(anomalies)} anomalies")
+            anomalies_count = len(anomalies)
+            print(f"[full-pipeline] Detected {anomalies_count} anomalies")
         except Exception as e:
             print(f"[full-pipeline] Anomaly error: {e}")
         
@@ -529,7 +549,7 @@ def full_pipeline():
             "message": f"Pipeline complete: {record_count} records analyzed.",
             "metrics": metrics,
             "predictions": predictions,
-            "anomalies": len(anomalies),
+            "anomalies": anomalies_count,
             "datasetSize": record_count
         })
     except Exception as e:
@@ -635,42 +655,42 @@ def confirm_bill():
         
         # ---- Step 3: Store bill record ----
         bill_record = {
-            "consumerNumber": consumer_number,
-            "billingMonth": billing_month,
-            "totalUnits": total_units,
-            "billAmount": bill_amount,
-            "previousReading": previous_reading,
-            "currentReading": current_reading,
-            "electricityBoard": electricity_board,
-            "originalFileName": original_file_name,
-            "fileType": file_type,
-            "extractionConfidence": confidence,
-            "rawTextLength": raw_text_length,
+            "user_id": "default",
+            "consumer_number": consumer_number,
+            "billing_month": billing_month,
+            "total_units": float(total_units) if total_units is not None else None,
+            "bill_amount": float(bill_amount) if bill_amount is not None else None,
+            "previous_reading": float(previous_reading) if previous_reading is not None else None,
+            "current_reading": float(current_reading) if current_reading is not None else None,
+            "electricity_board": electricity_board,
+            "original_file_name": original_file_name,
+            "file_type": file_type,
+            "extraction_confidence": confidence,
+            "raw_text_length": raw_text_length,
             "status": "success" if total_units else "partial",
-            "generatedRecords": len(energy_records),
-            "createdAt": datetime.now()
+            "generated_records": len(energy_records)
         }
-        db.billrecords.insert_one(bill_record)
+        db.table('bill_records').insert(bill_record).execute()
         
         # ---- Step 4: Insert energy records ----
         if energy_records:
             records_to_insert = []
             for rec in energy_records:
                 records_to_insert.append({
-                    "date": datetime.fromisoformat(rec['date']),
+                    "date": rec['date'],
                     "units": float(rec['units']),
                     "predicted_units": None,
                     "anomaly": False,
                     "source": "bill_ocr"
                 })
-            db.energydatas.insert_many(records_to_insert)
+            db.table('energy_data').insert(records_to_insert).execute()
             print(f"[pipeline] Inserted {len(records_to_insert)} energy records into DB")
         
         # ---- Step 5: Clear stale predictions and anomalies ----
         print("[pipeline] Step 5: Clearing old predictions and anomalies")
-        db.predictions.delete_many({})
-        db.anomalies.delete_many({})
-        db.energydatas.update_many({}, {'$set': {'anomaly': False}})
+        db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
         # ---- Step 6: Auto-retrain models ----
         train_metrics = {}
@@ -701,6 +721,10 @@ def confirm_bill():
         except Exception as ae:
             print(f"[pipeline] Anomaly detection skipped: {ae}")
         
+        # Fetch current record count
+        res_count = db.table('energy_data').select('id', count='exact', head=True).execute()
+        dataset_size = res_count.count if res_count.count is not None else 0
+
         response_data = {
             "success": True,
             "message": f"Bill processed! {len(energy_records)} records generated, models retrained.",
@@ -709,7 +733,7 @@ def confirm_bill():
                 "trained": "status" not in train_metrics,
                 "predictionsGenerated": len(fresh_predictions),
                 "anomaliesDetected": len(fresh_anomalies),
-                "datasetSize": db.energydatas.count_documents({})
+                "datasetSize": dataset_size
             }
         }
         return jsonify(response_data)
@@ -722,19 +746,35 @@ def confirm_bill():
 def bill_history():
     """Return stored bill records for display."""
     try:
-        records = list(db.billrecords.find().sort('createdAt', -1).limit(50))
+        res = db.table('bill_records').select('*').order('created_at', desc=True).limit(50).execute()
+        records = res.data or []
         result = []
         for r in records:
-            r.pop('_id', None)
-            if 'createdAt' in r and hasattr(r['createdAt'], 'isoformat'):
-                r['createdAt'] = r['createdAt'].isoformat()
-            result.append(r)
+            result.append({
+                "id": r.get('id'),
+                "userId": r.get('user_id'),
+                "consumerNumber": r.get('consumer_number'),
+                "billingMonth": r.get('billing_month'),
+                "totalUnits": float(r.get('total_units')) if r.get('total_units') is not None else None,
+                "billAmount": float(r.get('bill_amount')) if r.get('bill_amount') is not None else None,
+                "previousReading": float(r.get('previous_reading')) if r.get('previous_reading') is not None else None,
+                "currentReading": float(r.get('current_reading')) if r.get('current_reading') is not None else None,
+                "electricityBoard": r.get('electricity_board'),
+                "originalFileName": r.get('original_file_name'),
+                "fileType": r.get('file_type'),
+                "extractionConfidence": r.get('extraction_confidence'),
+                "rawTextLength": r.get('raw_text_length'),
+                "status": r.get('status'),
+                "errorMessage": r.get('error_message'),
+                "generatedRecords": r.get('generated_records'),
+                "createdAt": r.get('created_at'),
+                "updatedAt": r.get('updated_at')
+            })
         return jsonify({"success": True, "records": result})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('ML_PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-

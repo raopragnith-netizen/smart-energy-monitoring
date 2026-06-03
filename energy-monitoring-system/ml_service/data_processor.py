@@ -1,5 +1,5 @@
 """
-data_processor.py — CSV data processing and feature engineering module.
+data_processor.py — CSV data processing and feature engineering module (Supabase Version).
 
 Handles CSV upload parsing, column detection, missing value handling,
 and feature extraction for ML model training.
@@ -10,7 +10,7 @@ import numpy as np
 
 
 def process_and_store_csv(file_path, db):
-    """Process a CSV file and store records in MongoDB.
+    """Process a CSV file and store records in Supabase.
 
     Automatically detects date and units columns by name.
     Handles missing values via interpolation.
@@ -18,7 +18,7 @@ def process_and_store_csv(file_path, db):
 
     Args:
         file_path: Path to the CSV file.
-        db: PyMongo database instance.
+        db: Supabase Client instance.
 
     Returns:
         int: Number of records inserted.
@@ -71,13 +71,13 @@ def process_and_store_csv(file_path, db):
     if len(df) == 0:
         raise ValueError("No valid records found in the CSV after processing.")
 
-    # Clear old data and insert new (full dataset replacement)
-    db.energydatas.delete_many({})
+    # Clear old data (dataset replacement)
+    db.table('energy_data').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
 
     records = []
     for _, row in df.iterrows():
         records.append({
-            "date": row['date'],
+            "date": row['date'].isoformat(),
             "units": float(row['units']),
             "predicted_units": None,
             "anomaly": False,
@@ -85,7 +85,8 @@ def process_and_store_csv(file_path, db):
         })
 
     if records:
-        db.energydatas.insert_many(records)
+        # Split into chunks of 1000 if dataset is huge, but postgrest handles it well.
+        db.table('energy_data').insert(records).execute()
 
     return len(records)
 

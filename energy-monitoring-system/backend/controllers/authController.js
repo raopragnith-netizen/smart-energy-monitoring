@@ -1,7 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../../database/models/User');
-const ActivityLog = require('../../database/models/ActivityLog');
+const { supabase } = require('../utils/supabase');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'energy_monitor_secret_key_2026';
 const JWT_EXPIRES_IN = '24h';
@@ -49,7 +48,14 @@ exports.register = async (req, res) => {
         }
 
         // Check if user already exists
-        const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+        const { data: existingUser, error: checkError } = await supabase
+            .from('users')
+            .select('id')
+            .or(`email.eq.${email.toLowerCase()},username.eq.${username}`)
+            .maybeSingle();
+
+        if (checkError) throw checkError;
+
         if (existingUser) {
             return res.status(409).json({ success: false, message: 'Username or email already exists.' });
         }
@@ -59,41 +65,48 @@ exports.register = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         // Create user
-        const user = await User.create({
-            username,
-            email,
-            password: hashedPassword
-        });
+        const { data: user, error: insertError } = await supabase
+            .from('users')
+            .insert({
+                username,
+                email: email.toLowerCase(),
+                password: hashedPassword
+            })
+            .select()
+            .single();
+
+        if (insertError) throw insertError;
 
         // Generate JWT
         const token = jwt.sign(
-            { id: user._id, username: user.username, email: user.email },
+            { id: user.id, username: user.username, email: user.email },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
         );
 
         // Log activity
-        await ActivityLog.create({ userId: user._id, action: 'register', details: `New account created: ${username}` });
+        await supabase.from('activity_logs').insert({
+            user_id: user.id,
+            action: 'register',
+            details: `New account created: ${username}`
+        });
 
         res.status(201).json({
             success: true,
             message: 'Registration successful!',
             token,
             user: {
-                id: user._id,
+                id: user.id,
                 username: user.username,
                 email: user.email,
-                budgetLimit: user.budgetLimit || 0,
-                notificationsEnabled: user.notificationsEnabled || false,
-                notificationEmail: user.notificationEmail || ''
+                budgetLimit: parseFloat(user.budget_limit || 0),
+                notificationsEnabled: user.notifications_enabled || false,
+                notificationEmail: user.notification_email || ''
             }
         });
 
     } catch (error) {
         console.error('Register error:', error);
-        if (error.code === 11000) {
-            return res.status(409).json({ success: false, message: 'Username or email already exists.' });
-        }
         res.status(500).json({ success: false, message: 'Server error during registration.' });
     }
 };
@@ -110,9 +123,13 @@ exports.login = async (req, res) => {
         }
 
         // Find user by email or username
-        const user = await User.findOne({
-            $or: [{ email: identifier.toLowerCase() }, { username: identifier }]
-        });
+        const { data: user, error: checkError } = await supabase
+            .from('users')
+            .select('*')
+            .or(`email.eq.${identifier.toLowerCase()},username.eq.${identifier}`)
+            .maybeSingle();
+
+        if (checkError) throw checkError;
 
         if (!user) {
             return res.status(401).json({ success: false, message: 'Invalid credentials.' });
@@ -126,25 +143,29 @@ exports.login = async (req, res) => {
 
         // Generate JWT
         const token = jwt.sign(
-            { id: user._id, username: user.username, email: user.email },
+            { id: user.id, username: user.username, email: user.email },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
         );
 
         // Log activity
-        await ActivityLog.create({ userId: user._id, action: 'login', details: `User logged in` });
+        await supabase.from('activity_logs').insert({
+            user_id: user.id,
+            action: 'login',
+            details: 'User logged in'
+        });
 
         res.status(200).json({
             success: true,
             message: 'Login successful!',
             token,
             user: {
-                id: user._id,
+                id: user.id,
                 username: user.username,
                 email: user.email,
-                budgetLimit: user.budgetLimit || 0,
-                notificationsEnabled: user.notificationsEnabled || false,
-                notificationEmail: user.notificationEmail || ''
+                budgetLimit: parseFloat(user.budget_limit || 0),
+                notificationsEnabled: user.notifications_enabled || false,
+                notificationEmail: user.notification_email || ''
             }
         });
 
@@ -165,29 +186,49 @@ exports.updateProfile = async (req, res) => {
 
         const updateFields = {};
         const changes = [];
-        if (typeof budgetLimit === 'number') { updateFields.budgetLimit = budgetLimit; changes.push(`Budget: ${budgetLimit}`); }
-        if (typeof notificationsEnabled === 'boolean') { updateFields.notificationsEnabled = notificationsEnabled; changes.push(`Notifications: ${notificationsEnabled ? 'ON' : 'OFF'}`); }
-        if (typeof notificationEmail === 'string') { updateFields.notificationEmail = sanitize(notificationEmail); changes.push(`Email: ${sanitize(notificationEmail)}`); }
+        if (typeof budgetLimit === 'number') { 
+            updateFields.budget_limit = budgetLimit; 
+            changes.push(`Budget: ${budgetLimit}`); 
+        }
+        if (typeof notificationsEnabled === 'boolean') { 
+            updateFields.notifications_enabled = notificationsEnabled; 
+            changes.push(`Notifications: ${notificationsEnabled ? 'ON' : 'OFF'}`); 
+        }
+        if (typeof notificationEmail === 'string') { 
+            updateFields.notification_email = sanitize(notificationEmail); 
+            changes.push(`Email: ${sanitize(notificationEmail)}`); 
+        }
 
-        const user = await User.findByIdAndUpdate(userId, updateFields, { returnDocument: 'after' });
+        const { data: user, error: updateError } = await supabase
+            .from('users')
+            .update(updateFields)
+            .eq('id', userId)
+            .select()
+            .single();
+
+        if (updateError) throw updateError;
 
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
 
         // Log activity
-        await ActivityLog.create({ userId, action: 'settings_update', details: changes.join(', ') });
+        await supabase.from('activity_logs').insert({
+            user_id: userId,
+            action: 'settings_update',
+            details: changes.join(', ')
+        });
 
         res.json({
             success: true,
             message: 'Profile updated successfully.',
             user: {
-                id: user._id,
+                id: user.id,
                 username: user.username,
                 email: user.email,
-                budgetLimit: user.budgetLimit,
-                notificationsEnabled: user.notificationsEnabled,
-                notificationEmail: user.notificationEmail
+                budgetLimit: parseFloat(user.budget_limit || 0),
+                notificationsEnabled: user.notifications_enabled || false,
+                notificationEmail: user.notification_email || ''
             }
         });
     } catch (error) {
@@ -204,11 +245,17 @@ exports.forgotPassword = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Email is required.' });
         }
 
-        const user = await User.findOne({ email: email.toLowerCase() });
+        const { data: user, error: checkError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email.toLowerCase())
+            .maybeSingle();
+
+        if (checkError) throw checkError;
 
         // Always return success for security (don't reveal if email exists)
         if (!user) {
-            return res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
+            return res.json({ success: true, message: 'If that email exists, a reset code has been sent.' });
         }
 
         // Generate a temporary password reset token (6-digit code)
@@ -216,9 +263,15 @@ exports.forgotPassword = async (req, res) => {
         const resetCode = crypto.randomInt(100000, 999999).toString();
 
         // Store reset code with expiry (15 minutes)
-        user.resetCode = resetCode;
-        user.resetCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
-        await user.save();
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({
+                reset_code: resetCode,
+                reset_code_expiry: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+            })
+            .eq('id', user.id);
+
+        if (updateError) throw updateError;
 
         // Try to send email if SMTP is configured
         try {
@@ -251,9 +304,13 @@ exports.forgotPassword = async (req, res) => {
         }
 
         // Log activity
-        await ActivityLog.create({ userId: user._id, action: 'forgot_password', details: 'Password reset requested' });
+        await supabase.from('activity_logs').insert({
+            user_id: user.id,
+            action: 'forgot_password',
+            details: 'Password reset requested'
+        });
 
-        res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
+        res.json({ success: true, message: 'If that email exists, a reset code has been sent.' });
     } catch (error) {
         console.error('Forgot password error:', error);
         res.status(500).json({ success: false, message: 'Server error processing request.' });
@@ -275,7 +332,14 @@ exports.changePassword = async (req, res) => {
             return res.status(400).json({ success: false, message: passwordErrors.join(' ') });
         }
 
-        const user = await User.findById(userId);
+        const { data: user, error: checkError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (checkError) throw checkError;
+
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
@@ -288,11 +352,21 @@ exports.changePassword = async (req, res) => {
 
         // Hash new password
         const salt = await bcrypt.genSalt(12);
-        user.password = await bcrypt.hash(newPassword, salt);
-        await user.save();
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({ password: hashedPassword })
+            .eq('id', userId);
+
+        if (updateError) throw updateError;
 
         // Log activity
-        await ActivityLog.create({ userId: user._id, action: 'password_change', details: 'Password changed successfully' });
+        await supabase.from('activity_logs').insert({
+            user_id: user.id,
+            action: 'password_change',
+            details: 'Password changed successfully'
+        });
 
         res.json({ success: true, message: 'Password changed successfully.' });
     } catch (error) {
@@ -300,4 +374,3 @@ exports.changePassword = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server error changing password.' });
     }
 };
-
