@@ -4,7 +4,7 @@ services:
     name: energyai-backend
     runtime: node
     plan: free
-    rootDir: energy-monitoring-system/backend
+    rootDir: backend
     buildCommand: npm install
     startCommand: node server.js
     envVars:
@@ -31,7 +31,7 @@ services:
     name: energyai-ml
     runtime: python
     plan: free
-    rootDir: energy-monitoring-system/ml_service
+    rootDir: ml_service
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1
     envVars:

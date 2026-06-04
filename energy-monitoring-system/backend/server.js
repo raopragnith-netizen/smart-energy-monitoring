@@ -10,6 +10,7 @@ const notificationRoutes = require('./routes/notification');
 const mlServiceRoutes = require('./routes/mlService');
 const { checkAndNotify } = require('./controllers/notificationController');
 const axios = require('axios');
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -139,7 +140,7 @@ app.get('/', (req, res) => {
 });
 
 // ===== ML Service Integration =====
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
+// ML_SERVICE_URL is declared at the top of the file
 
 // Check if running in serverless (Vercel) or standalone (Render/local) mode
 const IS_SERVERLESS = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;

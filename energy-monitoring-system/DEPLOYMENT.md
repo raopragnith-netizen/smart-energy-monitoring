@@ -62,7 +62,7 @@ Internet Users
 3. Connect your GitHub repository.
 4. Configure the service:
    - **Name**: `energyai-ml`
-   - **Root Directory**: `energy-monitoring-system/ml_service`
+   - **Root Directory**: `ml_service`
    - **Runtime**: Python 3
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1`
@@ -91,7 +91,7 @@ Internet Users
 2. Connect the same GitHub repository.
 3. Configure the service:
    - **Name**: `energyai-backend`
-   - **Root Directory**: `energy-monitoring-system/backend`
+   - **Root Directory**: `backend`
    - **Runtime**: Node
    - **Build Command**: `npm install`
    - **Start Command**: `node server.js`
@@ -119,7 +119,7 @@ Internet Users
 3. Import your GitHub repository.
 4. Configure the project:
    - **Framework Preset**: Other (automatically reads `vercel.json`).
-   - **Root Directory**: Set to `energy-monitoring-system` (critical so Vercel can find the frontend files).
+   - **Root Directory**: Leave empty (repo root) — Vercel reads `vercel.json` automatically.
 5. Add the following **Environment Variable**:
 
    | Key | Value | Description |
