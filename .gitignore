@@ -43,3 +43,7 @@ package-lock.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Zip downloads
+rtrp.zip
+
