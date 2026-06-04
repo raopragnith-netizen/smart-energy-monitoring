@@ -53,6 +53,7 @@ export default async function handler(req, res) {
     // Forward the request stream if a request body is present
     if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
         fetchOptions.body = req;
+        fetchOptions.duplex = 'half';
     }
 
     try {
