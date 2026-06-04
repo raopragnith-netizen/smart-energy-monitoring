@@ -23,8 +23,9 @@ async function authFetch(url, options = {}) {
     const method = options.method || 'GET';
     const bodyStr = options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : '';
     const requestKey = `${method}:${url}:${bodyStr}`;
+    const isGet = method.toUpperCase() === 'GET';
 
-    if (activeRequests.has(requestKey)) {
+    if (isGet && activeRequests.has(requestKey)) {
         const response = await activeRequests.get(requestKey);
         return response.clone();
     }
@@ -50,11 +51,15 @@ async function authFetch(url, options = {}) {
             }
             return res;
         } finally {
-            activeRequests.delete(requestKey);
+            if (isGet) {
+                activeRequests.delete(requestKey);
+            }
         }
     })();
 
-    activeRequests.set(requestKey, fetchPromise);
+    if (isGet) {
+        activeRequests.set(requestKey, fetchPromise);
+    }
     return fetchPromise;
 }
 
