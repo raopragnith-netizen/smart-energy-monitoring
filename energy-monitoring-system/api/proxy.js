@@ -61,8 +61,26 @@ export default async function handler(req, res) {
 
     // Forward the request stream if a request body is present
     if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
-        fetchOptions.body = req;
-        fetchOptions.duplex = 'half';
+        const getRawBody = (stream) => {
+            return new Promise((resolve, reject) => {
+                const chunks = [];
+                stream.on('data', (chunk) => chunks.push(chunk));
+                stream.on('end', () => resolve(Buffer.concat(chunks)));
+                stream.on('error', (err) => reject(err));
+            });
+        };
+
+        try {
+            fetchOptions.body = await getRawBody(req);
+        } catch (err) {
+            console.error('[Proxy Error] Failed to read request body:', err);
+            res.status(400).json({ 
+                success: false, 
+                message: 'Failed to read upload body', 
+                error: err.message 
+            });
+            return;
+        }
     }
 
     try {
