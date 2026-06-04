@@ -51,6 +51,16 @@ db: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(htt
 print("[startup] ML models and OCR reader lazyloading configured.")
 
 
+@app.route('/', methods=['GET'])
+def index():
+    """Root endpoint — confirms service is online."""
+    return jsonify({
+        "status": "online",
+        "service": "Smart Energy AI ML Service",
+        "version": "2.0"
+    })
+
+
 @app.route('/process-csv', methods=['POST'])
 def process_csv():
     """Process an uploaded CSV file and store records in database."""
