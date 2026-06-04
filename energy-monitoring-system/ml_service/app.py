@@ -47,18 +47,8 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 db: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(httpx_client=httpx.Client(http2=False)))
 
-# Warm up / initialize models and OCR on startup
-print("[startup] Initializing ML services...")
-try:
-    from predict import load_lstm, load_lr
-    load_lstm()
-    load_lr()
-    print("[startup] ML models loaded successfully.")
-except Exception as e:
-    print(f"[startup] ML models failed to load: {e}")
-
-# OCR reader is lazy-loaded on demand to stay within Render's 512MB RAM limit.
-print("[startup] OCR reader lazyloading configured.")
+# ML models and OCR reader are lazy-loaded on demand to stay within Render's 512MB RAM limit.
+print("[startup] ML models and OCR reader lazyloading configured.")
 
 
 @app.route('/process-csv', methods=['POST'])
