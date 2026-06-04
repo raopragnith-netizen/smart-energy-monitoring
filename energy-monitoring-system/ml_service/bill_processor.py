@@ -95,13 +95,13 @@ except Exception:
 # Field Result Dataclass
 # ---------------------------------------------------------------------------
 
-@dataclass
 class FieldResult:
     """Holds an extracted field value with confidence metadata."""
-    value: Any
-    confidence: float  # 0-100
-    source: str        # 'ocr_direct', 'regex_fallback', 'computed', 'default'
-    raw_match: str = ''  # The raw OCR text that was matched
+    def __init__(self, value, confidence, source, raw_match=''):
+        self.value = value
+        self.confidence = confidence
+        self.source = source
+        self.raw_match = raw_match
 
     def to_dict(self):
         return {
