@@ -185,11 +185,10 @@ function startMLServiceProcess() {
     try {
         mlProcess = spawn(PYTHON_PATH, ['app.py'], {
             cwd: ML_SERVICE_DIR,
-            detached: true,
+            detached: false,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe']
         });
-        mlProcess.unref();
         mlProcess.stdout.on('data', (data) => {
             const msg = data.toString().trim();
             if (msg) console.log(`[ML Service] ${msg}`);
