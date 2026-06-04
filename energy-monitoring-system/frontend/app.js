@@ -1251,6 +1251,7 @@ async function loadEnhancedHistorical() {
 // ===== Chart Configuration =====
 Chart.defaults.color = '#94a3b8';
 Chart.defaults.borderColor = '#e2e8f0';
+Chart.defaults.maintainAspectRatio = false;
 
 let cachedEnhancedData = [];
 

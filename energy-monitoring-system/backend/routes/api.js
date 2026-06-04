@@ -3,7 +3,8 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const uploadsDir = path.join(__dirname, '..', 'uploads');
+const os = require('os');
+const uploadsDir = path.join(os.tmpdir(), 'energy-monitoring-uploads');
 if (!fs.existsSync(uploadsDir)) { fs.mkdirSync(uploadsDir, { recursive: true }); }
 const dataController = require('../controllers/dataController');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -15,7 +16,7 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
 // Multer Setup for CSV Upload
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, path.join(__dirname, '..', 'uploads'));
+        cb(null, uploadsDir);
     },
     filename: function (req, file, cb) {
         cb(null, Date.now() + '-' + file.originalname);
@@ -26,7 +27,7 @@ const upload = multer({ storage: storage });
 // Multer setup for bill uploads (images + PDFs)
 const billStorage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, path.join(__dirname, '..', 'uploads'));
+        cb(null, uploadsDir);
     },
     filename: function (req, file, cb) {
         const ext = path.extname(file.originalname).toLowerCase();

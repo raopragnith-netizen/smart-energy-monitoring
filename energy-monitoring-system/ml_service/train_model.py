@@ -120,40 +120,46 @@ def train_all_models(db, user_id=None):
     X_lstm, y_lstm = np.array(X_lstm), np.array(y_lstm)
 
     if len(X_lstm) > 0:
-        lstm = build_lstm_model((lookback, 1))
+        try:
+            lstm = build_lstm_model((lookback, 1))
 
-        # Train with early stopping for better generalization
-        from tensorflow.keras.callbacks import EarlyStopping
+            # Train with early stopping for better generalization
+            from tensorflow.keras.callbacks import EarlyStopping
 
-        early_stop = EarlyStopping(
-            monitor='loss',
-            patience=5,
-            restore_best_weights=True,
-            min_delta=0.0001
-        )
+            early_stop = EarlyStopping(
+                monitor='loss',
+                patience=5,
+                restore_best_weights=True,
+                min_delta=0.0001
+            )
 
-        # Use more epochs with early stopping (will stop when converged)
-        epochs = min(50, max(15, len(X_lstm) // 2))
-        batch_size = min(16, max(4, len(X_lstm) // 10))
+            # Use more epochs with early stopping (will stop when converged)
+            epochs = min(50, max(15, len(X_lstm) // 2))
+            batch_size = min(16, max(4, len(X_lstm) // 10))
 
-        history = lstm.fit(
-            X_lstm, y_lstm,
-            epochs=epochs,
-            batch_size=batch_size,
-            verbose=0,
-            callbacks=[early_stop]
-        )
+            history = lstm.fit(
+                X_lstm, y_lstm,
+                epochs=epochs,
+                batch_size=batch_size,
+                verbose=0,
+                callbacks=[early_stop]
+            )
 
-        lstm.save(f'models/lstm_model{user_suffix}.keras')
+            lstm.save(f'models/lstm_model{user_suffix}.keras')
 
-        lstm_preds = lstm.predict(X_lstm, verbose=0)
-        lstm_mse = mean_squared_error(y_lstm, lstm_preds)
-        lstm_mae = mean_absolute_error(y_lstm, lstm_preds)
+            lstm_preds = lstm.predict(X_lstm, verbose=0)
+            lstm_mse = mean_squared_error(y_lstm, lstm_preds)
+            lstm_mae = mean_absolute_error(y_lstm, lstm_preds)
 
-        metrics['LSTM_MSE'] = float(round(lstm_mse, 6))
-        metrics['LSTM_MAE'] = float(round(lstm_mae, 6))
-        metrics['LSTM_Epochs_Trained'] = len(history.history['loss'])
-        metrics['LSTM_Final_Loss'] = float(round(history.history['loss'][-1], 6))
+            metrics['LSTM_MSE'] = float(round(lstm_mse, 6))
+            metrics['LSTM_MAE'] = float(round(lstm_mae, 6))
+            metrics['LSTM_Epochs_Trained'] = len(history.history['loss'])
+            metrics['LSTM_Final_Loss'] = float(round(history.history['loss'][-1], 6))
+        except Exception as lstm_err:
+            print(f"[train_model] LSTM training failed (likely memory issue), skipping: {lstm_err}")
+            metrics['LSTM_Status'] = f"Failed: {str(lstm_err)}"
+            import gc
+            gc.collect()
     else:
         metrics['LSTM_Status'] = "Insufficient temporal data for LSTM"
 

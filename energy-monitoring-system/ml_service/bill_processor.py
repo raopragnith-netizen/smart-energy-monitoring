@@ -1542,3 +1542,19 @@ def _parse_billing_month(month_str):
             pass
 
     return None
+
+
+def free_paddleocr_reader():
+    """Explicitly release PaddleOCR resources to save memory in low-RAM environments."""
+    global _paddleocr_reader
+    if _paddleocr_reader is not None:
+        import gc
+        ocr_logger.info("Releasing PaddleOCR resources...")
+        try:
+            del _paddleocr_reader
+        except Exception as e:
+            ocr_logger.warning(f"Error deleting PaddleOCR reader: {e}")
+        _paddleocr_reader = None
+        gc.collect()
+        ocr_logger.info("PaddleOCR resources successfully released.")
+

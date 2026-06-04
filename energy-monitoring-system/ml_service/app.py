@@ -31,7 +31,7 @@ from data_processor import process_and_store_csv
 from train_model import train_all_models
 from predict import generate_predictions, generate_weekly_predictions
 from anomaly_detection import detect_abnormalities, check_user_id_support
-from bill_processor import extract_bill_data, bill_data_to_energy_records
+from bill_processor import extract_bill_data, bill_data_to_energy_records, free_paddleocr_reader
 import traceback
 
 load_dotenv()
@@ -40,7 +40,8 @@ app = Flask(__name__)
 CORS(app)
 
 # Ensure uploads directory exists
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
+import tempfile
+UPLOAD_DIR = os.path.join(tempfile.gettempdir(), 'energy-monitoring-uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
@@ -66,40 +67,44 @@ def process_csv():
     """Process an uploaded CSV file and store records in database."""
     # Check if a file is uploaded directly
     user_id = request.form.get('user_id')
-    if 'dataset' in request.files:
-        file = request.files['dataset']
-        if file.filename == '':
-            return jsonify({"success": False, "message": "No file selected"}), 400
-        
-        safe_name = f"uploaded_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
-        file_path = os.path.join(UPLOAD_DIR, safe_name)
-        file.save(file_path)
-        
-        try:
-            inserted_count = process_and_store_csv(file_path, db, user_id=user_id)
-            return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
-        except Exception as e:
-            traceback.print_exc()
-            return jsonify({"success": False, "message": str(e)}), 500
-        finally:
+    try:
+        if 'dataset' in request.files:
+            file = request.files['dataset']
+            if file.filename == '':
+                return jsonify({"success": False, "message": "No file selected"}), 400
+            
+            safe_name = f"uploaded_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+            file_path = os.path.join(UPLOAD_DIR, safe_name)
+            file.save(file_path)
+            
             try:
-                os.remove(file_path)
-            except OSError:
-                pass
-    else:
-        # Fallback to local file path
-        data = request.json or {}
-        file_path = data.get('file_path')
-        user_id = data.get('user_id')
-        if not file_path:
-            return jsonify({"success": False, "message": "No file path or dataset provided"}), 400
-        
-        try:
-            inserted_count = process_and_store_csv(file_path, db, user_id=user_id)
-            return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
-        except Exception as e:
-            traceback.print_exc()
-            return jsonify({"success": False, "message": str(e)}), 500
+                inserted_count = process_and_store_csv(file_path, db, user_id=user_id)
+                return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
+            except Exception as e:
+                traceback.print_exc()
+                return jsonify({"success": False, "message": str(e)}), 500
+            finally:
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+        else:
+            # Fallback to local file path
+            data = request.json or {}
+            file_path = data.get('file_path')
+            user_id = data.get('user_id')
+            if not file_path:
+                return jsonify({"success": False, "message": "No file path or dataset provided"}), 400
+            
+            try:
+                inserted_count = process_and_store_csv(file_path, db, user_id=user_id)
+                return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
+            except Exception as e:
+                traceback.print_exc()
+                return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        import gc
+        gc.collect()
 
 
 
@@ -112,6 +117,9 @@ def train():
         return jsonify({"success": True, "message": "Models trained successfully.", "metrics": metrics})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        import gc
+        gc.collect()
 
 
 @app.route('/predict', methods=['GET'])
@@ -123,6 +131,9 @@ def predict():
         return jsonify({"success": True, "predictions": predictions})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        import gc
+        gc.collect()
 
 
 @app.route('/predict-week', methods=['GET'])
@@ -145,6 +156,9 @@ def predict_week():
         })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        import gc
+        gc.collect()
 
 
 @app.route('/monthly-projection', methods=['GET'])
@@ -569,6 +583,12 @@ def process_bill():
             os.remove(file_path)
         except OSError:
             pass
+        try:
+            free_paddleocr_reader()
+        except Exception:
+            pass
+        import gc
+        gc.collect()
 
 
 @app.route('/full-pipeline', methods=['POST'])
@@ -649,6 +669,9 @@ def full_pipeline():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        import gc
+        gc.collect()
 
 
 @app.route('/ocr-bill', methods=['POST'])
@@ -709,6 +732,12 @@ def ocr_bill():
             os.remove(file_path)
         except OSError:
             pass
+        try:
+            free_paddleocr_reader()
+        except Exception:
+            pass
+        import gc
+        gc.collect()
 
 
 @app.route('/confirm-bill', methods=['POST'])
@@ -857,23 +886,9 @@ def confirm_bill():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"success": False, "message": f"Failed to process bill confirmation: {str(e)}"}), 500
-        dataset_size = res_count.count if res_count.count is not None else 0
-
-        response_data = {
-            "success": True,
-            "message": f"Bill processed! {len(energy_records)} records generated, models retrained.",
-            "recordsGenerated": len(energy_records),
-            "pipelineResults": {
-                "trained": "status" not in train_metrics,
-                "predictionsGenerated": len(fresh_predictions),
-                "anomaliesDetected": len(fresh_anomalies),
-                "datasetSize": dataset_size
-            }
-        }
-        return jsonify(response_data)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"success": False, "message": f"Failed to process bill confirmation: {str(e)}"}), 500
+    finally:
+        import gc
+        gc.collect()
 
 
 @app.route('/bill-history', methods=['GET'])

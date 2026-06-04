@@ -23,6 +23,12 @@ def load_lstm(user_id=None, force_reload=False):
     global _cached_lstm, _cached_scaler
     user_key = user_id or "default"
     if force_reload or user_key not in _cached_lstm:
+        # Clear cache if it gets too large to prevent memory growth on Render
+        if len(_cached_lstm) >= 2:
+            _cached_lstm.clear()
+            _cached_scaler.clear()
+            import gc
+            gc.collect()
         try:
             from tensorflow.keras.models import load_model
             user_suffix = f"_{user_id}" if user_id else ""
@@ -49,6 +55,11 @@ def load_lr(user_id=None, force_reload=False):
     global _cached_lr
     user_key = user_id or "default"
     if force_reload or user_key not in _cached_lr:
+        # Clear cache if it gets too large to prevent memory growth on Render
+        if len(_cached_lr) >= 3:
+            _cached_lr.clear()
+            import gc
+            gc.collect()
         try:
             user_suffix = f"_{user_id}" if user_id else ""
             model_path = f'models/lr_model{user_suffix}.pkl'
