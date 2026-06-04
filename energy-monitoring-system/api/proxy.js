@@ -25,6 +25,15 @@ export default async function handler(req, res) {
     const path = req.query.path || '';
     const backendUrl = process.env.BACKEND_URL || 'https://energyai-backend.onrender.com';
     
+    // If the frontend is requesting the backend URL config, return it directly
+    if (path === 'config') {
+        res.status(200).json({ 
+            success: true, 
+            backendUrl: backendUrl
+        });
+        return;
+    }
+    
     // Construct final destination URL
     const urlObj = new URL(req.url, 'http://localhost');
     const targetPath = (path === 'health' || path === 'status') ? `/${path}` : `/api/${path}`;

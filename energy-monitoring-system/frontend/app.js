@@ -19,11 +19,34 @@ function confirmLogout() {
     window.location.href = 'login.html';
 }
 
-const API_BASE = window.location.origin + '/api';
-const AUTH_BASE = window.location.origin + '/api/auth';
-const NOTIF_BASE = window.location.origin + '/api/notifications';
-const HEALTH_URL = window.location.origin + '/health';
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const cachedBackend = localStorage.getItem('energyai_backend_url');
+const baseEndpoint = (isLocal ? window.location.origin : (cachedBackend || window.location.origin)).replace(/\/$/, '');
+
+const API_BASE = baseEndpoint + '/api';
+const AUTH_BASE = baseEndpoint + '/api/auth';
+const NOTIF_BASE = baseEndpoint + '/api/notifications';
+const HEALTH_URL = baseEndpoint + '/health';
 const REFRESH_INTERVAL = 30000; // 30 seconds
+
+// Query Vercel configuration to dynamically update the backend URL
+if (!isLocal) {
+    (async function initApiUrls() {
+        try {
+            const res = await fetch(window.location.origin + '/api/config');
+            const data = await res.json();
+            if (data.success && data.backendUrl) {
+                const base = data.backendUrl.replace(/\/$/, '');
+                if (localStorage.getItem('energyai_backend_url') !== base) {
+                    localStorage.setItem('energyai_backend_url', base);
+                    window.location.reload();
+                }
+            }
+        } catch (err) {
+            console.warn('[API] Failed to fetch backend config:', err.message);
+        }
+    })();
+}
 
 // Chart instances
 let mainChartIns, anomalyChartIns, trendChartIns;
