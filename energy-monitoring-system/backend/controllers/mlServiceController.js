@@ -3,6 +3,7 @@ const path = require('path');
 const axios = require('axios');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
+console.log(`ML Service URL loaded: ${ML_SERVICE_URL}`);
 const ML_SERVICE_DIR = path.resolve(__dirname, '..', '..', 'ml_service');
 const PYTHON_PATH = process.env.PYTHON_PATH || (process.platform === 'win32' 
     ? path.join(ML_SERVICE_DIR, 'venv', 'Scripts', 'python.exe')

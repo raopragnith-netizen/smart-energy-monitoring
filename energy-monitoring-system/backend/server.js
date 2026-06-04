@@ -11,6 +11,7 @@ const mlServiceRoutes = require('./routes/mlService');
 const { checkAndNotify } = require('./controllers/notificationController');
 const axios = require('axios');
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
+console.log(`ML Service URL loaded: ${ML_SERVICE_URL}`);
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');

@@ -17,10 +17,34 @@ function queryTable(tableName, userId, selectOptions = null) {
 }
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
+console.log(`ML Service URL loaded: ${ML_SERVICE_URL}`);
+
+async function checkMLServiceHealth() {
+    try {
+        await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 2000 });
+        return true;
+    } catch (err) {
+        console.error("ML Service unavailable");
+        return false;
+    }
+}
 
 exports.uploadData = async (req, res) => {
     try {
         const userId = req.user.id;
+
+        // Pre-flight health check
+        const isHealthy = await checkMLServiceHealth();
+        if (!isHealthy) {
+            if (req.file && req.file.path) {
+                try { fs.unlinkSync(path.resolve(req.file.path)); } catch (e) {}
+            }
+            return res.status(503).json({
+                success: false,
+                message: "ML Service is currently unavailable. Please try again later."
+            });
+        }
+
         let filePath;
         const formData = new FormData();
 
@@ -48,11 +72,19 @@ exports.uploadData = async (req, res) => {
         formData.append('user_id', userId);
 
         console.log(`[backend] Processing CSV via upload for user ${userId}:`, filePath);
-        const processResponse = await axios.post(`${ML_SERVICE_URL}/process-csv`, formData, {
-            headers: formData.getHeaders(),
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity
-        });
+        console.log("Prediction request sent");
+        let processResponse;
+        try {
+            processResponse = await axios.post(`${ML_SERVICE_URL}/process-csv`, formData, {
+                headers: formData.getHeaders(),
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity
+            });
+            console.log("Prediction response received");
+        } catch (postErr) {
+            console.error("ML Service unavailable");
+            throw postErr;
+        }
         
         // Clean up uploaded file from backend (if not sample)
         if (!req.body.isSample && filePath) {
@@ -65,7 +97,11 @@ exports.uploadData = async (req, res) => {
 
         // Trigger full pipeline in background with user_id
         console.log(`[backend] Triggering full ML pipeline in background for user ${userId}...`);
-        axios.post(`${ML_SERVICE_URL}/full-pipeline`, { user_id: userId }).catch(err => {
+        console.log("Prediction request sent");
+        axios.post(`${ML_SERVICE_URL}/full-pipeline`, { user_id: userId }).then(() => {
+            console.log("Prediction response received");
+        }).catch(err => {
+            console.error("ML Service unavailable");
             console.error('[backend] Background full pipeline failed:', err.message);
         });
 
@@ -86,9 +122,22 @@ exports.uploadData = async (req, res) => {
 exports.trainModel = async (req, res) => {
     try {
         const userId = req.user.id;
+
+        // Pre-flight health check
+        const isHealthy = await checkMLServiceHealth();
+        if (!isHealthy) {
+            return res.status(503).json({
+                success: false,
+                message: "ML Service is currently unavailable. Please try again later."
+            });
+        }
+
+        console.log("Prediction request sent");
         const response = await axios.get(`${ML_SERVICE_URL}/train?user_id=${userId}`);
+        console.log("Prediction response received");
         res.status(200).json({ success: true, message: 'Model trained successfully.', data: response.data });
     } catch (error) {
+        console.error("ML Service unavailable");
         console.error(error);
         res.status(500).json({ success: false, message: 'Error training model.', error: error.message });
     }
@@ -163,54 +212,31 @@ exports.getRecommendations = async (req, res) => {
             return res.status(200).json({ success: true, data: [] });
         }
 
-        // Try ML service first
+        // Pre-flight health check
+        const isHealthy = await checkMLServiceHealth();
+        if (!isHealthy) {
+            return res.status(503).json({
+                success: false,
+                message: "ML Service is currently unavailable. Please try again later."
+            });
+        }
+
+        console.log("Prediction request sent");
         let suggestions = [];
         try {
             const response = await axios.get(`${ML_SERVICE_URL}/smart-recommendations?user_id=${userId}`);
+            console.log("Prediction response received");
             if (response.data.success && response.data.recommendations) {
                 suggestions = response.data.recommendations;
             }
+            res.status(200).json({ success: true, data: suggestions });
         } catch (mlErr) {
-            // Fallback: generate from user's own data only
-            try {
-                const { data: recentData } = await queryTable('energy_data', userId)
-                    .order('date', { ascending: false })
-                    .limit(30);
-
-                const { data: latestPred } = await queryTable('predictions', userId)
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                const predicted_units = latestPred ? parseFloat(latestPred.predicted_units) : 0;
-                const threshold = 15;
-
-                if (recentData && recentData.length > 0) {
-                    const avg = recentData.reduce((sum, d) => sum + parseFloat(d.units), 0) / recentData.length;
-                    const latest = parseFloat(recentData[0].units);
-
-                    if (latest > avg * 1.3) {
-                        suggestions.push({ 
-                            message: `Your latest usage (${latest.toFixed(1)} units) is ${(((latest - avg) / avg) * 100).toFixed(0)}% above your average. Consider reducing heavy appliance use.`, 
-                            type: 'Trend', 
-                            priority: 'high' 
-                        });
-                    }
-
-                    if (predicted_units > threshold) {
-                        suggestions.push({ message: 'Reduce AC usage by 1 hour during peak afternoon hours (2pm-5pm).', type: 'Household', priority: 'high' });
-                        suggestions.push({ message: 'Shift washing machine and dryer usage to off-peak hours (10pm-6am).', type: 'Household', priority: 'medium' });
-                    } else if (predicted_units > 0) {
-                        suggestions.push({ message: 'Energy usage is within optimal limits. Great job! 🎉', type: 'Household', priority: 'info' });
-                        suggestions.push({ message: 'Shift laundry and dishwasher cycles to off-peak hours (10pm–6am) to reduce peak demand.', type: 'Household', priority: 'medium' });
-                    }
-                }
-            } catch (dbErr) {
-                // No fallback — return empty if DB fails too
-            }
+            console.error("ML Service unavailable");
+            res.status(503).json({
+                success: false,
+                message: "ML Service is currently unavailable. Please try again later."
+            });
         }
-
-        res.status(200).json({ success: true, data: suggestions });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Error getting recommendations.', error: error.message });

@@ -12,6 +12,17 @@ const { supabase } = require('../utils/supabase');
 const axios = require('axios');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
+console.log(`ML Service URL loaded: ${ML_SERVICE_URL}`);
+
+async function checkMLServiceHealth() {
+    try {
+        await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 2000 });
+        return true;
+    } catch (err) {
+        console.error("ML Service unavailable");
+        return false;
+    }
+}
 
 // Multer Setup for CSV Upload
 const storage = multer.diskStorage({
@@ -77,6 +88,16 @@ router.post('/upload-bill', authMiddleware, billUpload.single('bill'), async (re
         const filePath = path.resolve(req.file.path);
         const ext = path.extname(req.file.originalname).toLowerCase();
         const userId = req.user.id;
+
+        // Pre-flight health check
+        const isHealthy = await checkMLServiceHealth();
+        if (!isHealthy) {
+            try { fs.unlinkSync(filePath); } catch (e) {}
+            return res.status(503).json({
+                success: false,
+                message: "ML Service is currently unavailable. Please try again later."
+            });
+        }
         
         // 1. Save initial processing record to Supabase
         const { data, error } = await supabase
@@ -110,12 +131,14 @@ router.post('/upload-bill', authMiddleware, billUpload.single('bill'), async (re
                 formData.append('user_id', userId);
 
                 console.log(`[backend] Sending bill ${billId} to ML Service for OCR...`);
+                console.log("Prediction request sent");
                 const response = await axios.post(`${ML_SERVICE_URL}/ocr-bill`, formData, {
                     headers: formData.getHeaders(),
                     maxContentLength: Infinity,
                     maxBodyLength: Infinity,
                     timeout: 120000 // 2 min timeout for OCR
                 });
+                console.log("Prediction response received");
 
                 // Clean up uploaded file from backend
                 try { fs.unlinkSync(filePath); } catch (e) {}
@@ -148,6 +171,7 @@ router.post('/upload-bill', authMiddleware, billUpload.single('bill'), async (re
                     throw new Error(response.data.message || 'OCR extraction returned unsuccessful');
                 }
             } catch (err) {
+                console.error("ML Service unavailable");
                 console.error(`[backend] Background OCR failed for bill ${billId}:`, err.message);
                 try { fs.unlinkSync(filePath); } catch (e) {}
                 await supabase
@@ -216,18 +240,29 @@ router.get('/bill-status/:id', authMiddleware, async (req, res) => {
 
 router.post('/confirm-bill', authMiddleware, async (req, res) => {
     try {
+        const isHealthy = await checkMLServiceHealth();
+        if (!isHealthy) {
+            return res.status(503).json({
+                success: false,
+                message: "ML Service is currently unavailable. Please try again later."
+            });
+        }
+
+        console.log("Prediction request sent");
         const response = await axios.post(`${ML_SERVICE_URL}/confirm-bill`, {
             ...req.body,
             user_id: req.user.id
         }, {
             timeout: 120000 // 2 min timeout
         });
+        console.log("Prediction response received");
         if (response.data.success) {
             res.json(response.data);
         } else {
             res.status(400).json(response.data);
         }
     } catch (error) {
+        console.error("ML Service unavailable");
         console.error('Bill confirmation error:', error.message);
         const msg = error.response?.data?.message || error.message || 'Failed to confirm bill';
         res.status(500).json({ success: false, message: msg });
@@ -267,10 +302,18 @@ router.get('/bill-history', authMiddleware, async (req, res) => {
         res.json({ success: true, records: mappedRecords });
     } catch (error) {
         // Fallback: try ML service directly
+        const isHealthy = await checkMLServiceHealth();
+        if (!isHealthy) {
+            console.error("ML Service unavailable");
+            return res.status(500).json({ success: false, message: error.message });
+        }
+        console.log("Prediction request sent");
         try {
             const response = await axios.get(`${ML_SERVICE_URL}/bill-history?user_id=${req.user.id}`);
+            console.log("Prediction response received");
             res.json(response.data);
         } catch (e) {
+            console.error("ML Service unavailable");
             res.status(500).json({ success: false, message: error.message });
         }
     }
@@ -308,13 +351,24 @@ router.get('/activity-log', authMiddleware, async (req, res) => {
 // Full ML Pipeline — retrain + predict + anomalies in one call
 router.post('/full-pipeline', authMiddleware, async (req, res) => {
     try {
+        const isHealthy = await checkMLServiceHealth();
+        if (!isHealthy) {
+            return res.status(503).json({
+                success: false,
+                message: "ML Service is currently unavailable. Please try again later."
+            });
+        }
+
+        console.log("Prediction request sent");
         const response = await axios.post(`${ML_SERVICE_URL}/full-pipeline`, {
             user_id: req.user.id
         }, {
             timeout: 120000 // 2 min for training
         });
+        console.log("Prediction response received");
         res.json(response.data);
     } catch (error) {
+        console.error("ML Service unavailable");
         console.error('Full pipeline error:', error.message);
         const msg = error.response?.data?.message || error.message;
         res.status(500).json({ success: false, message: msg });
