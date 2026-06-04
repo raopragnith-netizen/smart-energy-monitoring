@@ -23,7 +23,7 @@ export default async function handler(req, res) {
 
     // Get path parameter passed from vercel.json routing
     const path = req.query.path || '';
-    const backendUrl = process.env.BACKEND_URL || 'https://energyai-backend.onrender.com';
+    const backendUrl = process.env.BACKEND_URL || 'https://energy-monitoring-backend-e6hm.onrender.com';
     
     // If the frontend is requesting the backend URL config, return it directly
     if (path === 'config') {
