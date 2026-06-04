@@ -150,6 +150,7 @@ function clearMessages() {
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearMessages();
+    console.log('[Auth] Login started');
 
     const identifier = document.getElementById('login-identifier').value.trim();
     const password = document.getElementById('login-password').value;
@@ -173,6 +174,7 @@ loginForm.addEventListener('submit', async (e) => {
         const data = await res.json();
 
         if (data.success) {
+            console.log('[Auth] Authentication success');
             showMessage(loginMessage, 'Login successful. Redirecting...', 'success');
             localStorage.setItem('energyai_token', data.token);
             localStorage.setItem('energyai_user', JSON.stringify(data.user));
@@ -223,6 +225,7 @@ registerForm.addEventListener('submit', async (e) => {
         const data = await res.json();
 
         if (data.success) {
+            console.log('[Auth] Authentication success');
             showMessage(registerMessage, 'Account created. Redirecting...', 'success');
             localStorage.setItem('energyai_token', data.token);
             localStorage.setItem('energyai_user', JSON.stringify(data.user));

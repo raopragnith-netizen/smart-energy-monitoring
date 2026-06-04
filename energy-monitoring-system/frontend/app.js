@@ -11,7 +11,24 @@
  * Wrapper around window.fetch that automatically inserts authorization headers
  * and handles 401 unauthorized errors (redirect to login).
  */
+// Active request cache map for request deduplication
+const activeRequests = new Map();
+
+/**
+ * Wrapper around window.fetch that automatically inserts authorization headers
+ * and handles 401 unauthorized errors (redirect to login).
+ * Implements request deduplication to prevent redundant concurrent network calls.
+ */
 async function authFetch(url, options = {}) {
+    const method = options.method || 'GET';
+    const bodyStr = options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : '';
+    const requestKey = `${method}:${url}:${bodyStr}`;
+
+    if (activeRequests.has(requestKey)) {
+        const response = await activeRequests.get(requestKey);
+        return response.clone();
+    }
+
     const token = localStorage.getItem('energyai_token');
     options.headers = options.headers || {};
     if (token) {
@@ -21,14 +38,41 @@ async function authFetch(url, options = {}) {
     if (options.body && typeof options.body === 'string' && !options.headers['Content-Type']) {
         options.headers['Content-Type'] = 'application/json';
     }
-    const res = await authFetch(url, options);
-    if (res.status === 401) {
-        localStorage.removeItem('energyai_token');
-        localStorage.removeItem('energyai_user');
-        window.location.href = 'login.html';
-        throw new Error('Authentication expired. Redirecting to login.');
+
+    const fetchPromise = (async () => {
+        try {
+            const res = await fetch(url, options);
+            if (res.status === 401) {
+                localStorage.removeItem('energyai_token');
+                localStorage.removeItem('energyai_user');
+                window.location.href = 'login.html';
+                throw new Error('Authentication expired. Redirecting to login.');
+            }
+            return res;
+        } finally {
+            activeRequests.delete(requestKey);
+        }
+    })();
+
+    activeRequests.set(requestKey, fetchPromise);
+    return fetchPromise;
+}
+
+// ===== Graceful Fallback UI / Error Boundary =====
+function runWithErrorBoundary(fn, elementId, fallbackHtml = '') {
+    try {
+        fn();
+    } catch (error) {
+        console.error(`[Error Boundary] Component error:`, error);
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.innerHTML = fallbackHtml || `
+                <div class="error-boundary-fallback" style="padding: 1.5rem; text-align: center; background: rgba(239, 68, 68, 0.05); border: 1px dashed rgba(239, 68, 68, 0.2); border-radius: 8px; margin: 10px 0;">
+                    <span style="color: #ef4444; font-size: 0.9rem; font-weight: 500;">⚠️ Failed to load this component</span>
+                </div>
+            `;
+        }
     }
-    return res;
 }
 
 // Logout handler — show confirmation modal
@@ -161,10 +205,16 @@ function populateUserInfo() {
     if (profileNotifs) profileNotifs.textContent = currentUser.notificationsEnabled ? '✅ Enabled' : '❌ Disabled';
     if (profileBudget) profileBudget.textContent = currentUser.budgetLimit ? `${currentUser.budgetLimit} kWh/month` : 'Not set';
     if (profileNotifEmail) profileNotifEmail.textContent = currentUser.notificationEmail || currentUser.email || '—';
+
+    console.log('[Profile] Profile loaded');
 }
 
 // ===== Sync user state everywhere =====
 function syncUserState(userData) {
+    // Safe state updates: check if anything has actually changed
+    const isDifferent = Object.keys(userData).some(key => currentUser[key] !== userData[key]);
+    if (!isDifferent) return;
+
     currentUser = { ...currentUser, ...userData };
     localStorage.setItem('energyai_user', JSON.stringify(currentUser));
     populateUserInfo();
@@ -1126,18 +1176,21 @@ async function checkDataAndRender() {
             if (emptyState) emptyState.style.display = 'none';
             if (dashContent) dashContent.style.display = 'block';
 
-            loadRealtimeStatus();
-            loadEnhancedHistorical();
-            loadRecommendations();
-            loadMonthlyProjection();
-            loadAnomalyLog();
-            loadDailyUsageChart();
-            loadWeeklyCompChart();
-            renderApplianceBreakdown();
+            // Wrap component rendering in error boundaries
+            runWithErrorBoundary(() => loadRealtimeStatus(), 'status-cards');
+            runWithErrorBoundary(() => loadEnhancedHistorical(), 'mainChart');
+            runWithErrorBoundary(() => loadRecommendations(), 'recsList');
+            runWithErrorBoundary(() => loadMonthlyProjection(), 'monthly-panel');
+            runWithErrorBoundary(() => loadAnomalyLog(), 'anomaly-log');
+            runWithErrorBoundary(() => loadDailyUsageChart(), 'dailyUsageChart');
+            runWithErrorBoundary(() => loadWeeklyCompChart(), 'weeklyCompChart');
+            runWithErrorBoundary(() => renderApplianceBreakdown(), 'applianceChart');
         } else {
             if (emptyState) emptyState.style.display = 'flex';
             if (dashContent) dashContent.style.display = 'none';
         }
+
+        console.log('[Dashboard] Dashboard loaded');
     } catch (err) {
         console.error('Data status load failed', err);
         if (emptyState) emptyState.style.display = 'flex';
