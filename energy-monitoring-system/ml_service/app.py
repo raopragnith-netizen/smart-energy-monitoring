@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
 from data_processor import process_and_store_csv
 from train_model import train_all_models
 from predict import generate_predictions, generate_weekly_predictions
-from anomaly_detection import detect_abnormalities
+from anomaly_detection import detect_abnormalities, check_user_id_support
 from bill_processor import extract_bill_data, bill_data_to_energy_records
 import traceback
 
@@ -166,15 +166,16 @@ def monthly_projection():
         month_start = datetime(now.year, now.month, 1)
         
         # Get all data for the current month
+        has_user_id_energy = check_user_id_support(db, 'energy_data')
         query_month = db.table('energy_data').select('*').gte('date', month_start.isoformat())
-        if user_id:
+        if user_id and has_user_id_energy:
             query_month = query_month.eq('user_id', user_id)
         res_month = query_month.order('date', desc=False).execute()
         month_data = res_month.data or []
         
         # Get last 7 days for average calculation
         query_recent = db.table('energy_data').select('*')
-        if user_id:
+        if user_id and has_user_id_energy:
             query_recent = query_recent.eq('user_id', user_id)
         res_recent = query_recent.order('date', desc=True).limit(7).execute()
         recent_data = res_recent.data or []
@@ -237,8 +238,9 @@ def latest_prediction():
     """Return the most recent prediction for recommendation generation."""
     user_id = request.args.get('user_id')
     try:
+        has_user_id_pred = check_user_id_support(db, 'predictions')
         query = db.table('predictions').select('*')
-        if user_id:
+        if user_id and has_user_id_pred:
             query = query.eq('user_id', user_id)
         res = query.order('target_date', desc=True).limit(1).execute()
         latest = res.data[0] if res.data else None
@@ -261,8 +263,9 @@ def smart_recommendations():
     user_id = request.args.get('user_id')
     try:
         # Get historical data
+        has_user_id_energy = check_user_id_support(db, 'energy_data')
         query_hist = db.table('energy_data').select('*')
-        if user_id:
+        if user_id and has_user_id_energy:
             query_hist = query_hist.eq('user_id', user_id)
         res_hist = query_hist.order('date', desc=False).execute()
         data = res_hist.data or []
@@ -277,8 +280,9 @@ def smart_recommendations():
         recent_avg = df['units'].tail(7).mean() if len(df) >= 7 else avg_units
 
         # Get latest prediction
+        has_user_id_pred = check_user_id_support(db, 'predictions')
         query_pred = db.table('predictions').select('*')
-        if user_id:
+        if user_id and has_user_id_pred:
             query_pred = query_pred.eq('user_id', user_id)
         res_pred = query_pred.order('target_date', desc=True).limit(1).execute()
         latest_pred = res_pred.data[0] if res_pred.data else None
@@ -447,28 +451,41 @@ def process_bill():
         
         # ---- Step 4: Insert energy records ----
         if energy_records:
+            has_user_id_energy = check_user_id_support(db, 'energy_data')
             records_to_insert = []
             for rec in energy_records:
-                records_to_insert.append({
+                rec_doc = {
                     "date": rec['date'],
                     "units": float(rec['units']),
                     "predicted_units": None,
                     "anomaly": False,
-                    "source": "bill_ocr",
-                    "user_id": user_id
-                })
+                    "source": "bill_ocr"
+                }
+                if user_id and has_user_id_energy:
+                    rec_doc["user_id"] = user_id
+                records_to_insert.append(rec_doc)
             db.table('energy_data').insert(records_to_insert).execute()
             print(f"[pipeline] Inserted {len(records_to_insert)} energy records into DB")
         
         # ---- Step 5: Clear stale predictions and anomalies ----
         print("[pipeline] Step 5: Clearing old predictions and anomalies")
-        if user_id:
+        has_user_id_pred = check_user_id_support(db, 'predictions')
+        has_user_id_anom = check_user_id_support(db, 'anomalies')
+        has_user_id_energy = check_user_id_support(db, 'energy_data')
+        
+        if user_id and has_user_id_pred:
             db.table('predictions').delete().eq('user_id', user_id).execute()
-            db.table('anomalies').delete().eq('user_id', user_id).execute()
-            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
         else:
             db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            
+        if user_id and has_user_id_anom:
+            db.table('anomalies').delete().eq('user_id', user_id).execute()
+        else:
             db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            
+        if user_id and has_user_id_energy:
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+        else:
             db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
         # ---- Step 6: Auto-retrain models ----
@@ -502,7 +519,7 @@ def process_bill():
         
         # Fetch current record count
         query_count = db.table('energy_data').select('id', count='exact', head=True)
-        if user_id:
+        if user_id and has_user_id_energy:
             query_count = query_count.eq('user_id', user_id)
         res_count = query_count.execute()
         dataset_size = res_count.count if res_count.count is not None else 0
@@ -565,17 +582,27 @@ def full_pipeline():
     user_id = data.get('user_id')
     try:
         # Clear stale predictions and anomalies for this user
-        if user_id:
+        has_user_id_pred = check_user_id_support(db, 'predictions')
+        has_user_id_anom = check_user_id_support(db, 'anomalies')
+        has_user_id_energy = check_user_id_support(db, 'energy_data')
+        
+        if user_id and has_user_id_pred:
             db.table('predictions').delete().eq('user_id', user_id).execute()
-            db.table('anomalies').delete().eq('user_id', user_id).execute()
-            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
         else:
             db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            
+        if user_id and has_user_id_anom:
+            db.table('anomalies').delete().eq('user_id', user_id).execute()
+        else:
             db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            
+        if user_id and has_user_id_energy:
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+        else:
             db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
         query_count = db.table('energy_data').select('id', count='exact', head=True)
-        if user_id:
+        if user_id and has_user_id_energy:
             query_count = query_count.eq('user_id', user_id)
         res_count = query_count.execute()
         record_count = res_count.count if res_count.count is not None else 0
@@ -742,28 +769,41 @@ def confirm_bill():
         
         # ---- Step 4: Insert energy records ----
         if energy_records:
+            has_user_id_energy = check_user_id_support(db, 'energy_data')
             records_to_insert = []
             for rec in energy_records:
-                records_to_insert.append({
+                rec_doc = {
                     "date": rec['date'],
                     "units": float(rec['units']),
                     "predicted_units": None,
                     "anomaly": False,
-                    "source": "bill_ocr",
-                    "user_id": user_id
-                })
+                    "source": "bill_ocr"
+                }
+                if user_id and has_user_id_energy:
+                    rec_doc["user_id"] = user_id
+                records_to_insert.append(rec_doc)
             db.table('energy_data').insert(records_to_insert).execute()
             print(f"[pipeline] Inserted {len(records_to_insert)} energy records into DB")
         
         # ---- Step 5: Clear stale predictions and anomalies ----
         print("[pipeline] Step 5: Clearing old predictions and anomalies")
-        if user_id:
+        has_user_id_pred = check_user_id_support(db, 'predictions')
+        has_user_id_anom = check_user_id_support(db, 'anomalies')
+        has_user_id_energy = check_user_id_support(db, 'energy_data')
+        
+        if user_id and has_user_id_pred:
             db.table('predictions').delete().eq('user_id', user_id).execute()
-            db.table('anomalies').delete().eq('user_id', user_id).execute()
-            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
         else:
             db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            
+        if user_id and has_user_id_anom:
+            db.table('anomalies').delete().eq('user_id', user_id).execute()
+        else:
             db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            
+        if user_id and has_user_id_energy:
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+        else:
             db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
         # ---- Step 6: Auto-retrain models ----
@@ -797,7 +837,7 @@ def confirm_bill():
         
         # Fetch current record count
         query_count = db.table('energy_data').select('id', count='exact', head=True)
-        if user_id:
+        if user_id and has_user_id_energy:
             query_count = query_count.eq('user_id', user_id)
         res_count = query_count.execute()
         dataset_size = res_count.count if res_count.count is not None else 0

@@ -11,6 +11,7 @@ import numpy as np
 import pickle
 import os
 from datetime import timedelta
+from anomaly_detection import check_user_id_support
 
 
 _cached_lstm = {}

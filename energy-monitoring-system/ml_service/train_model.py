@@ -16,6 +16,7 @@ import os
 
 from data_processor import prepare_features
 from lstm_model import build_lstm_model
+from anomaly_detection import check_user_id_support
 
 
 def train_all_models(db, user_id=None):
@@ -40,8 +41,9 @@ def train_all_models(db, user_id=None):
     metrics = {}
 
     # Fetch user-scoped data
+    has_user_id_energy = check_user_id_support(db, 'energy_data')
     query = db.table('energy_data').select('*')
-    if user_id:
+    if user_id and has_user_id_energy:
         query = query.eq('user_id', user_id)
     res = query.order('date', desc=False).execute()
     
