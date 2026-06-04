@@ -45,13 +45,7 @@ const ruleLetter = document.getElementById('rule-letter');
 const ruleDigit = document.getElementById('rule-digit');
 const ruleSpecial = document.getElementById('rule-special');
 
-// ===== Redirect if already authenticated =====
-(function checkAuth() {
-    const token = localStorage.getItem('energyai_token');
-    if (token) {
-        window.location.href = 'index.html';
-    }
-})();
+// Auto-redirect disabled as requested
 
 // ===== View Switching (login ↔ register ↔ forgot) =====
 showRegisterLink.addEventListener('click', (e) => {
