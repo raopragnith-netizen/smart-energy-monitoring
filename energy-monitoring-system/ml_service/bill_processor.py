@@ -565,6 +565,11 @@ def extract_text_from_image(image_path):
                 if detections else 0
             )
             candidates.append((label, text, detections, len(text), avg_conf))
+            
+            # Optimization: if confidence is high and we got decent text, stop running more variants
+            if avg_conf >= 0.85 and len(text) >= 150:
+                ocr_logger.info(f"Early exit: variant '{label}' has high confidence ({avg_conf:.4f}) and text length ({len(text)}). Skipping remaining variants.")
+                break
         except Exception as e:
             ocr_logger.debug(f"OCR on {label} variant failed: {e}")
 
