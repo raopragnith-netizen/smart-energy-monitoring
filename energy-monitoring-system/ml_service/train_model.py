@@ -18,17 +18,18 @@ from data_processor import prepare_features
 from lstm_model import build_lstm_model
 
 
-def train_all_models(db):
+def train_all_models(db, user_id=None):
     """Train all ML models on historical energy data.
 
     Pipeline:
-    1. Fetch and validate data from Supabase
+    1. Fetch and validate data from Supabase for this user
     2. Train Linear Regression with engineered features (lag, weekday, etc.)
     3. Train LSTM with 7-day lookback window on scaled data
     4. Save models, scalers, and return training metrics
 
     Args:
         db: Supabase Client instance.
+        user_id: ID of the authenticated user.
 
     Returns:
         dict: Training metrics (MSE, MAE, R² for each model).
@@ -38,8 +39,12 @@ def train_all_models(db):
     """
     metrics = {}
 
-    # Fetch data
-    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    # Fetch user-scoped data
+    query = db.table('energy_data').select('*')
+    if user_id:
+        query = query.eq('user_id', user_id)
+    res = query.order('date', desc=False).execute()
+    
     data = res.data or []
     if not data:
         raise ValueError("No data found to train models.")
@@ -59,6 +64,9 @@ def train_all_models(db):
     for col in required_cols:
         if col not in df.columns:
             raise KeyError(f"Missing required training column: {col}")
+
+    # User-specific filename suffix
+    user_suffix = f"_{user_id}" if user_id else ""
 
     # ==== 1. Linear Regression Model ====
     feature_cols = ['day', 'month', 'year', 'weekday', 'lag_1', 'lag_7']
@@ -91,14 +99,14 @@ def train_all_models(db):
     metrics['LinearRegression_R2'] = float(round(lr_r2, 4))
 
     os.makedirs('models', exist_ok=True)
-    with open('models/lr_model.pkl', 'wb') as f:
+    with open(f'models/lr_model{user_suffix}.pkl', 'wb') as f:
         pickle.dump(lr_model, f)
 
     # ==== 2. LSTM Model ====
     scaler = MinMaxScaler()
     scaled_units = scaler.fit_transform(df[['units']])
 
-    with open('models/scaler.pkl', 'wb') as f:
+    with open(f'models/scaler{user_suffix}.pkl', 'wb') as f:
         pickle.dump(scaler, f)
 
     X_lstm, y_lstm = [], []
@@ -134,7 +142,7 @@ def train_all_models(db):
             callbacks=[early_stop]
         )
 
-        lstm.save('models/lstm_model.keras')
+        lstm.save(f'models/lstm_model{user_suffix}.keras')
 
         lstm_preds = lstm.predict(X_lstm, verbose=0)
         lstm_mse = mean_squared_error(y_lstm, lstm_preds)
@@ -153,9 +161,9 @@ def train_all_models(db):
     # Reload models into cache after training
     try:
         from predict import load_lstm, load_lr
-        load_lstm(force_reload=True)
-        load_lr(force_reload=True)
-        print("[train_model] ML models reloaded successfully in cache after training.")
+        load_lstm(user_id=user_id, force_reload=True)
+        load_lr(user_id=user_id, force_reload=True)
+        print(f"[train_model] ML models for user {user_id} reloaded successfully in cache after training.")
     except Exception as re_err:
         print(f"[train_model] Failed to reload ML models: {re_err}")
 

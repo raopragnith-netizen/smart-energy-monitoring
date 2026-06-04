@@ -8,6 +8,7 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
 
 exports.uploadData = async (req, res) => {
     try {
+        const userId = req.user.id;
         let filePath;
         const formData = new FormData();
 
@@ -31,8 +32,10 @@ exports.uploadData = async (req, res) => {
             });
         }
 
-        // 1. Process CSV by uploading directly to ML service
-        console.log('[backend] Processing CSV via upload:', filePath);
+        // Pass user_id to ML service so data is stored per-user
+        formData.append('user_id', userId);
+
+        console.log(`[backend] Processing CSV via upload for user ${userId}:`, filePath);
         const processResponse = await axios.post(`${ML_SERVICE_URL}/process-csv`, formData, {
             headers: formData.getHeaders(),
             maxContentLength: Infinity,
@@ -48,9 +51,9 @@ exports.uploadData = async (req, res) => {
             throw new Error(processResponse.data.message || 'CSV processing failed');
         }
 
-        // 2. Trigger full pipeline (train, predict, anomalies) asynchronously in background
-        console.log('[backend] Triggering full ML pipeline in background...');
-        axios.post(`${ML_SERVICE_URL}/full-pipeline`, {}).catch(err => {
+        // Trigger full pipeline in background with user_id
+        console.log(`[backend] Triggering full ML pipeline in background for user ${userId}...`);
+        axios.post(`${ML_SERVICE_URL}/full-pipeline`, { user_id: userId }).catch(err => {
             console.error('[backend] Background full pipeline failed:', err.message);
         });
 
@@ -61,7 +64,6 @@ exports.uploadData = async (req, res) => {
         });
     } catch (error) {
         console.error('[backend] Upload error:', error.message);
-        // Ensure cleanup of uploaded file in case of error
         if (req.file && req.file.path) {
             try { fs.unlinkSync(path.resolve(req.file.path)); } catch (e) {}
         }
@@ -71,7 +73,8 @@ exports.uploadData = async (req, res) => {
 
 exports.trainModel = async (req, res) => {
     try {
-        const response = await axios.get(`${ML_SERVICE_URL}/train`);
+        const userId = req.user.id;
+        const response = await axios.get(`${ML_SERVICE_URL}/train?user_id=${userId}`);
         res.status(200).json({ success: true, message: 'Model trained successfully.', data: response.data });
     } catch (error) {
         console.error(error);
@@ -81,10 +84,11 @@ exports.trainModel = async (req, res) => {
 
 exports.getPredictions = async (req, res) => {
     try {
-        // Try direct query from Supabase first
+        const userId = req.user.id;
         const { data, error } = await supabase
             .from('predictions')
             .select('*')
+            .eq('user_id', userId)
             .eq('prediction_type', 'single')
             .order('target_date', { ascending: false })
             .limit(1);
@@ -101,28 +105,21 @@ exports.getPredictions = async (req, res) => {
             return res.status(200).json({ success: true, predictions });
         }
 
-        // Fallback to ML service
-        const response = await axios.get(`${ML_SERVICE_URL}/predict`);
-        const predictions = response.data.predictions || [];
-        res.status(200).json({ success: true, predictions });
+        // No predictions exist for this user
+        res.status(200).json({ success: true, predictions: [] });
     } catch (error) {
-        console.warn('[backend] Database query failed or returned no predictions, using ML Service:', error.message);
-        try {
-            const response = await axios.get(`${ML_SERVICE_URL}/predict`);
-            const predictions = response.data.predictions || [];
-            res.status(200).json({ success: true, predictions });
-        } catch (mlErr) {
-            res.status(500).json({ success: false, message: 'Error getting predictions.', error: mlErr.message });
-        }
+        console.warn('[backend] Prediction query failed:', error.message);
+        res.status(200).json({ success: true, predictions: [] });
     }
 };
 
 exports.getAnomalies = async (req, res) => {
     try {
-        // Try direct query from Supabase first
+        const userId = req.user.id;
         const { data, error } = await supabase
             .from('anomalies')
             .select('*')
+            .eq('user_id', userId)
             .order('date', { ascending: false });
 
         if (error) throw error;
@@ -140,43 +137,50 @@ exports.getAnomalies = async (req, res) => {
             return res.status(200).json({ success: true, anomalies });
         }
 
-        // Fallback to ML service
-        const response = await axios.get(`${ML_SERVICE_URL}/detect-anomalies`);
-        const anomalies = response.data.anomalies || [];
-        res.status(200).json({ success: true, anomalies });
+        // No anomalies for this user
+        res.status(200).json({ success: true, anomalies: [] });
     } catch (error) {
-        console.warn('[backend] Database query failed or returned no anomalies, using ML Service:', error.message);
-        try {
-            const response = await axios.get(`${ML_SERVICE_URL}/detect-anomalies`);
-            const anomalies = response.data.anomalies || [];
-            res.status(200).json({ success: true, anomalies });
-        } catch (mlErr) {
-            res.status(500).json({ success: false, message: 'Error getting anomalies.', error: mlErr.message });
-        }
+        console.warn('[backend] Anomaly query failed:', error.message);
+        res.status(200).json({ success: true, anomalies: [] });
     }
 };
 
 exports.getRecommendations = async (req, res) => {
     try {
-        // Try enhanced recommendations from ML service first
+        const userId = req.user.id;
+
+        // Check if user has any data first
+        const { count, error: countErr } = await supabase
+            .from('energy_data')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId);
+        
+        if (countErr || !count || count === 0) {
+            // No data — return empty recommendations
+            return res.status(200).json({ success: true, data: [] });
+        }
+
+        // Try ML service first
         let suggestions = [];
         try {
-            const response = await axios.get(`${ML_SERVICE_URL}/smart-recommendations`);
+            const response = await axios.get(`${ML_SERVICE_URL}/smart-recommendations?user_id=${userId}`);
             if (response.data.success && response.data.recommendations) {
                 suggestions = response.data.recommendations;
             }
         } catch (mlErr) {
-            // Fallback: generate recommendations purely from database (no ML service needed)
+            // Fallback: generate from user's own data only
             try {
                 const { data: recentData } = await supabase
                     .from('energy_data')
                     .select('*')
+                    .eq('user_id', userId)
                     .order('date', { ascending: false })
                     .limit(30);
 
                 const { data: latestPred } = await supabase
                     .from('predictions')
                     .select('*')
+                    .eq('user_id', userId)
                     .order('created_at', { ascending: false })
                     .limit(1)
                     .maybeSingle();
@@ -195,21 +199,17 @@ exports.getRecommendations = async (req, res) => {
                             priority: 'high' 
                         });
                     }
-                }
 
-                if (predicted_units > threshold) {
-                    suggestions.push({ message: 'Reduce AC usage by 1 hour during peak afternoon hours (2pm-5pm).', type: 'Household', priority: 'high' });
-                    suggestions.push({ message: 'Shift washing machine and dryer usage to off-peak hours (10pm-6am).', type: 'Household', priority: 'medium' });
-                    suggestions.push({ message: 'Unplug idle electronics — standby power accounts for 5-10% of total usage.', type: 'Household', priority: 'low' });
-                } else {
-                    suggestions.push({ message: 'Energy usage is within optimal limits. Great job! 🎉', type: 'Household', priority: 'info' });
-                    suggestions.push({ message: 'Shift laundry and dishwasher cycles to off-peak hours (10pm–6am) to reduce peak demand.', type: 'Household', priority: 'medium' });
-                    suggestions.push({ message: 'Consider setting a budget limit in Settings to get proactive alerts.', type: 'Household', priority: 'info' });
+                    if (predicted_units > threshold) {
+                        suggestions.push({ message: 'Reduce AC usage by 1 hour during peak afternoon hours (2pm-5pm).', type: 'Household', priority: 'high' });
+                        suggestions.push({ message: 'Shift washing machine and dryer usage to off-peak hours (10pm-6am).', type: 'Household', priority: 'medium' });
+                    } else if (predicted_units > 0) {
+                        suggestions.push({ message: 'Energy usage is within optimal limits. Great job! 🎉', type: 'Household', priority: 'info' });
+                        suggestions.push({ message: 'Shift laundry and dishwasher cycles to off-peak hours (10pm–6am) to reduce peak demand.', type: 'Household', priority: 'medium' });
+                    }
                 }
             } catch (dbErr) {
-                // Final fallback: generic tips
-                suggestions.push({ message: 'Energy usage is within optimal limits. Great job! 🎉', type: 'Household', priority: 'info' });
-                suggestions.push({ message: 'Shift heavy appliance usage to off-peak hours (10pm–6am) for savings.', type: 'Household', priority: 'medium' });
+                // No fallback — return empty if DB fails too
             }
         }
 
@@ -222,15 +222,16 @@ exports.getRecommendations = async (req, res) => {
 
 exports.getHistoricalData = async (req, res) => {
     try {
+        const userId = req.user.id;
         const { data, error } = await supabase
             .from('energy_data')
             .select('*')
+            .eq('user_id', userId)
             .order('date', { ascending: false })
             .limit(100);
 
         if (error) throw error;
         
-        // Reverse to restore chronological order (ascending) and map structure
         const mappedData = (data || []).reverse().map(d => ({
             id: d.id,
             date: d.date,
@@ -252,9 +253,36 @@ exports.getHistoricalData = async (req, res) => {
 // Real-time status for dashboard polling
 exports.getRealtimeStatus = async (req, res) => {
     try {
+        const userId = req.user.id;
+
+        // Check if user has ANY data
+        const { count: dataCount, error: countErr } = await supabase
+            .from('energy_data')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId);
+
+        if (countErr) throw countErr;
+
+        if (!dataCount || dataCount === 0) {
+            return res.json({
+                success: true,
+                hasData: false,
+                status: {
+                    currentUsage: null,
+                    predictedUsage: null,
+                    dailyAvg: null,
+                    weeklyTotal: null,
+                    anomalyCount: 0,
+                    hourlyTrend: [],
+                    lastUpdated: new Date().toISOString()
+                }
+            });
+        }
+
         const { data: latestData, error: dataErr } = await supabase
             .from('energy_data')
             .select('*')
+            .eq('user_id', userId)
             .order('date', { ascending: false })
             .limit(7);
         if (dataErr) throw dataErr;
@@ -262,6 +290,7 @@ exports.getRealtimeStatus = async (req, res) => {
         const { data: latestPrediction, error: predErr } = await supabase
             .from('predictions')
             .select('*')
+            .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -269,12 +298,14 @@ exports.getRealtimeStatus = async (req, res) => {
 
         const { count: anomalyCount, error: anomErr } = await supabase
             .from('anomalies')
-            .select('*', { count: 'exact', head: true });
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId);
         if (anomErr) throw anomErr;
 
         const { data: allData, error: allErr } = await supabase
             .from('energy_data')
             .select('*')
+            .eq('user_id', userId)
             .order('date', { ascending: false })
             .limit(30);
         if (allErr) throw allErr;
@@ -286,7 +317,6 @@ exports.getRealtimeStatus = async (req, res) => {
         const weeklyTotal = latestData ? latestData.reduce((sum, d) => sum + parseFloat(d.units), 0) : 0;
         const predicted = latestPrediction ? parseFloat(latestPrediction.predicted_units) : 0;
 
-        // Calculate hourly trend (use recent data points as proxy)
         const last24 = (allData || []).slice(0, Math.min(24, allData.length)).reverse();
         const hourlyTrend = last24.map(d => ({
             date: d.date,
@@ -296,6 +326,7 @@ exports.getRealtimeStatus = async (req, res) => {
 
         res.json({
             success: true,
+            hasData: true,
             status: {
                 currentUsage: parseFloat(currentUsage.toFixed(2)),
                 predictedUsage: parseFloat(predicted.toFixed(2)),
@@ -315,36 +346,38 @@ exports.getRealtimeStatus = async (req, res) => {
 // Enhanced historical data with anomaly flags and predictions overlaid
 exports.getEnhancedHistorical = async (req, res) => {
     try {
+        const userId = req.user.id;
+
         const { data: historicalData, error: histErr } = await supabase
             .from('energy_data')
             .select('*')
+            .eq('user_id', userId)
             .order('date', { ascending: false })
             .limit(200);
         if (histErr) throw histErr;
 
-        // Reverse to restore chronological order (ascending)
         const sortedHistory = (historicalData || []).reverse();
 
         const { data: predictions, error: predErr } = await supabase
             .from('predictions')
             .select('*')
+            .eq('user_id', userId)
             .order('target_date', { ascending: true });
         if (predErr) throw predErr;
 
         const { data: anomalies, error: anomErr } = await supabase
             .from('anomalies')
             .select('*')
+            .eq('user_id', userId)
             .order('date', { ascending: true });
         if (anomErr) throw anomErr;
 
-        // Build prediction map for quick lookup
         const predMap = {};
         (predictions || []).forEach(p => {
             const key = new Date(p.target_date).toISOString().split('T')[0];
             predMap[key] = parseFloat(p.predicted_units);
         });
 
-        // Build anomaly set for quick lookup
         const anomalySet = new Set();
         (anomalies || []).forEach(a => {
             anomalySet.add(new Date(a.date).toISOString().split('T')[0]);
@@ -370,10 +403,12 @@ exports.getEnhancedHistorical = async (req, res) => {
 // Weekly predictions (7-day forecast)
 exports.getWeeklyPredictions = async (req, res) => {
     try {
-        // Try direct query from Supabase first
+        const userId = req.user.id;
+
         const { data, error } = await supabase
             .from('predictions')
             .select('*')
+            .eq('user_id', userId)
             .eq('prediction_type', 'weekly')
             .order('target_date', { ascending: true })
             .limit(7);
@@ -395,23 +430,18 @@ exports.getWeeklyPredictions = async (req, res) => {
             });
         }
 
-        const response = await axios.get(`${ML_SERVICE_URL}/predict-week`);
-        res.status(200).json(response.data);
+        // No weekly predictions for this user
+        res.status(200).json({ success: true, predictions: [], weeklyTotal: 0 });
     } catch (error) {
-        console.warn('[backend] Weekly predictions DB fetch failed, using ML Service:', error.message);
-        try {
-            const response = await axios.get(`${ML_SERVICE_URL}/predict-week`);
-            res.status(200).json(response.data);
-        } catch (mlErr) {
-            res.status(500).json({ success: false, message: 'Error getting weekly predictions.', error: mlErr.message });
-        }
+        console.warn('[backend] Weekly predictions query failed:', error.message);
+        res.status(200).json({ success: true, predictions: [], weeklyTotal: 0 });
     }
 };
 
-// Monthly projection (projected monthly consumption)
+// Monthly projection
 exports.getMonthlyProjection = async (req, res) => {
     try {
-        // Compute monthly projection directly from DB to bypass cold starts
+        const userId = req.user.id;
         const now = new Date();
         const year = now.getFullYear();
         const month = now.getMonth();
@@ -421,6 +451,7 @@ exports.getMonthlyProjection = async (req, res) => {
         const { data: monthData, error: monthErr } = await supabase
             .from('energy_data')
             .select('*')
+            .eq('user_id', userId)
             .gte('date', monthStart)
             .order('date', { ascending: true });
             
@@ -429,6 +460,7 @@ exports.getMonthlyProjection = async (req, res) => {
         const { data: recentData, error: recentErr } = await supabase
             .from('energy_data')
             .select('*')
+            .eq('user_id', userId)
             .order('date', { ascending: false })
             .limit(7);
             
@@ -453,15 +485,67 @@ exports.getMonthlyProjection = async (req, res) => {
             });
         }
         
-        const response = await axios.get(`${ML_SERVICE_URL}/monthly-projection`);
-        res.status(200).json(response.data);
+        // No data for this user
+        res.status(200).json({
+            success: true,
+            projected: 0,
+            daysElapsed: 0,
+            daysRemaining: 0,
+            daysInMonth: 0,
+            actualSoFar: 0,
+            dailyAvg: 0
+        });
     } catch (error) {
-        console.warn('[backend] Monthly projection calculation failed, using ML Service:', error.message);
-        try {
-            const response = await axios.get(`${ML_SERVICE_URL}/monthly-projection`);
-            res.status(200).json(response.data);
-        } catch (mlErr) {
-            res.status(500).json({ success: false, message: 'Error getting monthly projection.', error: mlErr.message });
+        console.warn('[backend] Monthly projection failed:', error.message);
+        res.status(200).json({
+            success: true,
+            projected: 0,
+            daysElapsed: 0,
+            daysRemaining: 0,
+            daysInMonth: 0,
+            actualSoFar: 0,
+            dailyAvg: 0
+        });
+    }
+};
+
+// User data status endpoint — used by frontend to determine empty-state rendering
+exports.getUserDataStatus = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const { count: dataCount, error: dataErr } = await supabase
+            .from('energy_data')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId);
+
+        if (dataErr) throw dataErr;
+
+        let datasetStatus = 'not_uploaded';
+        if (dataCount > 0) {
+            datasetStatus = 'ready';
         }
+
+        // Check if there's a bill currently processing
+        const { data: pendingBills, error: billErr } = await supabase
+            .from('bill_records')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('status', 'processing')
+            .limit(1);
+
+        if (!billErr && pendingBills && pendingBills.length > 0) {
+            datasetStatus = 'processing';
+        }
+
+        res.json({
+            success: true,
+            hasData: dataCount > 0,
+            datasetStatus,
+            recordCount: dataCount || 0
+        });
+    } catch (error) {
+        console.error('[backend] User data status error:', error.message);
+        res.status(500).json({ success: false, message: error.message });
     }
 };

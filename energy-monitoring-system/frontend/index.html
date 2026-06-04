@@ -75,6 +75,10 @@
                         <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
                         <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                     </button>
+                    <span class="status-badge status-not-uploaded" id="dataset-status-badge">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Not Uploaded</span>
+                    </span>
                     <span class="ml-badge" id="ml-status">
                         <span class="ml-dot" id="ml-dot-top"></span>
                         ML: Checking...
@@ -102,12 +106,12 @@
                             <div class="empty-state-icon">
                                 <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             </div>
-                            <h2 class="empty-state-title">No Data Available</h2>
-                            <p class="empty-state-desc">Upload your electricity usage dataset to view insights, predictions, and analytics.</p>
+                            <h2 class="empty-state-title">No energy data available.</h2>
+                            <p class="empty-state-desc">Upload an electricity bill or CSV dataset to generate predictions and analytics.</p>
                             <div class="empty-state-steps">
-                                <div class="step-item"><span class="step-num">1</span><span>Upload your CSV dataset</span></div>
-                                <div class="step-item"><span class="step-num">2</span><span>Train the ML models</span></div>
-                                <div class="step-item"><span class="step-num">3</span><span>View predictions & insights</span></div>
+                                <div class="step-item"><span class="step-num">1</span><span>Upload an electricity bill or CSV dataset</span></div>
+                                <div class="step-item"><span class="step-num">2</span><span>Generate energy usage forecasts</span></div>
+                                <div class="step-item"><span class="step-num">3</span><span>View user-specific predictions & insights</span></div>
                             </div>
                             <div class="empty-state-actions">
                                 <button class="btn btn-primary" onclick="document.querySelectorAll('.nav-link').forEach(l=>{l.classList.remove('active');if(l.dataset.section==='analytics')l.classList.add('active')});document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));document.getElementById('section-analytics').classList.add('active');document.getElementById('page-title').textContent='Analytics';">

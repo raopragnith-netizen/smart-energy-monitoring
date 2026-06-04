@@ -281,6 +281,68 @@ body {
     gap: var(--space-md);
 }
 
+/* Dataset Status Badge */
+.status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: var(--font-xs);
+    font-weight: 600;
+    transition: all var(--transition-base);
+}
+
+.status-badge.status-ready {
+    background: var(--accent-green-bg);
+    color: var(--accent-green);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.status-badge.status-ready .status-dot {
+    background: var(--accent-green);
+}
+
+.status-badge.status-processing {
+    background: var(--accent-amber-bg);
+    color: var(--accent-amber);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.status-badge.status-processing .status-dot {
+    background: var(--accent-amber);
+    animation: dotPulse 0.8s ease-in-out infinite;
+}
+
+.status-badge.status-not-uploaded {
+    background: var(--accent-red-bg);
+    color: var(--accent-red);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.status-badge.status-not-uploaded .status-dot {
+    background: var(--accent-red);
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+
+/* Disabled state when no user data exists */
+.panel-disabled {
+    opacity: 0.45;
+    pointer-events: none;
+    filter: grayscale(80%);
+}
+
+.btn-disabled {
+    opacity: 0.45;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
 /* ML Status Badge */
 .ml-badge {
     display: flex;

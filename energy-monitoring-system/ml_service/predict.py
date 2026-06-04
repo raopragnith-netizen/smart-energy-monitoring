@@ -13,43 +13,63 @@ import os
 from datetime import timedelta
 
 
-_cached_lstm = None
-_cached_scaler = None
-_cached_lr = None
+_cached_lstm = {}
+_cached_scaler = {}
+_cached_lr = {}
 
-def load_lstm(force_reload=False):
-    """Safely load and cache the LSTM model and scaler."""
+def load_lstm(user_id=None, force_reload=False):
+    """Safely load and cache the LSTM model and scaler for a specific user."""
     global _cached_lstm, _cached_scaler
-    if force_reload or _cached_lstm is None:
+    user_key = user_id or "default"
+    if force_reload or user_key not in _cached_lstm:
         try:
             from tensorflow.keras.models import load_model
-            _cached_lstm = load_model('models/lstm_model.keras')
-            with open('models/scaler.pkl', 'rb') as f:
-                _cached_scaler = pickle.load(f)
-            print("[predict] LSTM model and scaler loaded successfully.")
+            user_suffix = f"_{user_id}" if user_id else ""
+            model_path = f'models/lstm_model{user_suffix}.keras'
+            scaler_path = f'models/scaler{user_suffix}.pkl'
+            
+            if not os.path.exists(model_path) or not os.path.exists(scaler_path):
+                _cached_lstm[user_key] = None
+                _cached_scaler[user_key] = None
+                print(f"[predict] No custom LSTM model found for user {user_key}.")
+            else:
+                _cached_lstm[user_key] = load_model(model_path)
+                with open(scaler_path, 'rb') as f:
+                    _cached_scaler[user_key] = pickle.load(f)
+                print(f"[predict] LSTM model and scaler loaded successfully for user {user_key}.")
         except Exception as e:
-            print(f"[predict] Could not load LSTM: {e}")
-            _cached_lstm, _cached_scaler = None, None
-    return _cached_lstm, _cached_scaler
+            print(f"[predict] Could not load LSTM for user {user_key}: {e}")
+            _cached_lstm[user_key], _cached_scaler[user_key] = None, None
+    return _cached_lstm.get(user_key), _cached_scaler.get(user_key)
 
 
-def load_lr(force_reload=False):
-    """Safely load and cache the Linear Regression model."""
+def load_lr(user_id=None, force_reload=False):
+    """Safely load and cache the Linear Regression model for a specific user."""
     global _cached_lr
-    if force_reload or _cached_lr is None:
+    user_key = user_id or "default"
+    if force_reload or user_key not in _cached_lr:
         try:
-            with open('models/lr_model.pkl', 'rb') as f:
-                _cached_lr = pickle.load(f)
-            print("[predict] LR model loaded successfully.")
+            user_suffix = f"_{user_id}" if user_id else ""
+            model_path = f'models/lr_model{user_suffix}.pkl'
+            if not os.path.exists(model_path):
+                _cached_lr[user_key] = None
+                print(f"[predict] No custom LR model found for user {user_key}.")
+            else:
+                with open(model_path, 'rb') as f:
+                    _cached_lr[user_key] = pickle.load(f)
+                print(f"[predict] LR model loaded successfully for user {user_key}.")
         except Exception as e:
-            print(f"[predict] Could not load LR model: {e}")
-            _cached_lr = None
-    return _cached_lr
+            print(f"[predict] Could not load LR model for user {user_key}: {e}")
+            _cached_lr[user_key] = None
+    return _cached_lr.get(user_key)
 
 
-def _fallback_prediction(db, days=1):
+def _fallback_prediction(db, user_id=None, days=1):
     """Generate a simple moving-average fallback prediction."""
-    res = db.table('energy_data').select('*').order('date', desc=True).limit(14).execute()
+    query = db.table('energy_data').select('*')
+    if user_id:
+        query = query.eq('user_id', user_id)
+    res = query.order('date', desc=True).limit(14).execute()
     data = res.data or []
     if not data:
         return []
@@ -73,7 +93,8 @@ def _fallback_prediction(db, days=1):
             "predicted_units": float(pred_units),
             "day_name": day_names[target_date.weekday()],
             "model_used": "MovingAverage",
-            "prediction_type": "weekly" if days > 1 else "single"
+            "prediction_type": "weekly" if days > 1 else "single",
+            "user_id": user_id
         }
         db.table('predictions').insert(pred_doc).execute()
 
@@ -87,18 +108,22 @@ def _fallback_prediction(db, days=1):
     return predictions
 
 
-def generate_predictions(db):
+def generate_predictions(db, user_id=None):
     """Generate a single next-day prediction.
 
     Tries LSTM first, falls back to moving average if unavailable.
     """
-    model, scaler = load_lstm()
+    model, scaler = load_lstm(user_id=user_id)
 
-    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    query = db.table('energy_data').select('*')
+    if user_id:
+        query = query.eq('user_id', user_id)
+    res = query.order('date', desc=False).execute()
+    
     data = res.data or []
     if len(data) < 7:
         if len(data) > 0:
-            return _fallback_prediction(db, days=1)
+            return _fallback_prediction(db, user_id=user_id, days=1)
         return []
 
     df = pd.DataFrame(data)
@@ -123,7 +148,8 @@ def generate_predictions(db):
                 "target_date": next_date.isoformat(),
                 "predicted_units": float(pred_units),
                 "model_used": "LSTM",
-                "prediction_type": "single"
+                "prediction_type": "single",
+                "user_id": user_id
             }
             db.table('predictions').insert(pred_doc).execute()
 
@@ -133,25 +159,29 @@ def generate_predictions(db):
                 "modelUsed": "LSTM"
             }]
         except Exception as e:
-            print(f"[predict] LSTM prediction failed, using fallback: {e}")
+            print(f"[predict] LSTM prediction failed for user {user_id}, using fallback: {e}")
 
     # Fallback
-    return _fallback_prediction(db, days=1)
+    return _fallback_prediction(db, user_id=user_id, days=1)
 
 
-def generate_weekly_predictions(db):
+def generate_weekly_predictions(db, user_id=None):
     """Generate 7-day iterative predictions using the trained LSTM model.
 
     Uses a rolling-window approach. Falls back to moving average
     if LSTM is unavailable.
     """
-    model, scaler = load_lstm()
+    model, scaler = load_lstm(user_id=user_id)
 
-    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    query = db.table('energy_data').select('*')
+    if user_id:
+        query = query.eq('user_id', user_id)
+    res = query.order('date', desc=False).execute()
+    
     data = res.data or []
     if len(data) < 7:
         if len(data) > 0:
-            return _fallback_prediction(db, days=7)
+            return _fallback_prediction(db, user_id=user_id, days=7)
         return []
 
     df = pd.DataFrame(data)
@@ -188,7 +218,8 @@ def generate_weekly_predictions(db):
                     "predicted_units": float(pred_units),
                     "day_name": day_name,
                     "model_used": "LSTM",
-                    "prediction_type": "weekly"
+                    "prediction_type": "weekly",
+                    "user_id": user_id
                 }
                 db.table('predictions').insert(pred_doc).execute()
 
@@ -204,7 +235,7 @@ def generate_weekly_predictions(db):
 
             return predictions
         except Exception as e:
-            print(f"[predict] Weekly LSTM failed, using fallback: {e}")
+            print(f"[predict] Weekly LSTM failed for user {user_id}, using fallback: {e}")
 
     # Fallback
-    return _fallback_prediction(db, days=7)
+    return _fallback_prediction(db, user_id=user_id, days=7)

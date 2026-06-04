@@ -187,6 +187,7 @@ async function checkAndNotify() {
             const { data: recentData, error: dataErr } = await supabase
                 .from('energy_data')
                 .select('*')
+                .eq('user_id', user.id)
                 .order('date', { ascending: false })
                 .limit(30);
 
@@ -250,6 +251,7 @@ async function checkAndNotify() {
             const { data: recentAnomalies, error: anomErr } = await supabase
                 .from('anomalies')
                 .select('*')
+                .eq('user_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(5);
 
@@ -280,8 +282,7 @@ async function checkAndNotify() {
 // Send test notification
 exports.sendTestEmail = async (req, res) => {
     try {
-        const userId = req.body.userId;
-        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+        const userId = req.user.id;
 
         const result = await sendAlert(userId, 'test', 'This is a test notification from Smart Energy AI.', {
             recommendations: ['Your notifications are working correctly!']
@@ -311,25 +312,20 @@ exports.triggerCheck = async (req, res) => {
 // Get notification history (filtered by userId)
 exports.getHistory = async (req, res) => {
     try {
-        const userId = req.query.userId;
-        let query = supabase.from('notification_logs').select('*').order('sent_at', { ascending: false }).limit(50);
-        if (userId) {
-            query = query.eq('user_id', userId);
-        }
+        const userId = req.user.id;
+        let query = supabase.from('notification_logs').select('*').eq('user_id', userId).order('sent_at', { ascending: false }).limit(50);
         
         const { data: logs, error: logsErr } = await query;
         if (logsErr) throw logsErr;
 
         let unreadCount = 0;
-        if (userId) {
-            const { count, error: countErr } = await supabase
-                .from('notification_logs')
-                .select('*', { count: 'exact', head: true })
-                .eq('user_id', userId)
-                .eq('read', false);
-            if (countErr) throw countErr;
-            unreadCount = count || 0;
-        }
+        const { count, error: countErr } = await supabase
+            .from('notification_logs')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('read', false);
+        if (countErr) throw countErr;
+        unreadCount = count || 0;
 
         const mappedLogs = (logs || []).map(l => ({
             id: l.id,
@@ -353,14 +349,16 @@ exports.getHistory = async (req, res) => {
 // Mark notifications as read
 exports.markRead = async (req, res) => {
     try {
-        const { userId, notificationId } = req.body;
+        const userId = req.user.id;
+        const { notificationId } = req.body;
         if (notificationId) {
             const { error } = await supabase
                 .from('notification_logs')
                 .update({ read: true })
-                .eq('id', notificationId);
+                .eq('id', notificationId)
+                .eq('user_id', userId);
             if (error) throw error;
-        } else if (userId) {
+        } else {
             const { error } = await supabase
                 .from('notification_logs')
                 .update({ read: true })

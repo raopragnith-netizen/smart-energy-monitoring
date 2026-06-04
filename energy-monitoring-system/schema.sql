@@ -19,9 +19,10 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Energy Data Table
+-- 2. Energy Data Table (user-scoped)
 CREATE TABLE IF NOT EXISTS energy_data (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID DEFAULT NULL,
     date TIMESTAMP WITH TIME ZONE NOT NULL,
     units NUMERIC NOT NULL,
     predicted_units NUMERIC DEFAULT NULL,
@@ -32,9 +33,10 @@ CREATE TABLE IF NOT EXISTS energy_data (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Predictions Table
+-- 3. Predictions Table (user-scoped)
 CREATE TABLE IF NOT EXISTS predictions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID DEFAULT NULL,
     target_date TIMESTAMP WITH TIME ZONE NOT NULL,
     predicted_units NUMERIC NOT NULL,
     model_used TEXT DEFAULT 'LSTM',
@@ -44,9 +46,10 @@ CREATE TABLE IF NOT EXISTS predictions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Anomalies Table
+-- 4. Anomalies Table (user-scoped)
 CREATE TABLE IF NOT EXISTS anomalies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID DEFAULT NULL,
     date TIMESTAMP WITH TIME ZONE NOT NULL,
     units NUMERIC NOT NULL,
     expected_units NUMERIC DEFAULT NULL,
@@ -70,10 +73,10 @@ CREATE TABLE IF NOT EXISTS recommendations (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. Bill Records Table
+-- 6. Bill Records Table (user-scoped)
 CREATE TABLE IF NOT EXISTS bill_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id TEXT DEFAULT 'default',
+    user_id UUID DEFAULT NULL,
     consumer_number TEXT DEFAULT NULL,
     billing_month TEXT DEFAULT NULL,
     total_units NUMERIC DEFAULT NULL,
@@ -119,8 +122,22 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_energy_data_date ON energy_data(date DESC);
+CREATE INDEX IF NOT EXISTS idx_energy_data_user ON energy_data(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_predictions_target_date ON predictions(target_date ASC);
+CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id, target_date ASC);
 CREATE INDEX IF NOT EXISTS idx_anomalies_date ON anomalies(date DESC);
+CREATE INDEX IF NOT EXISTS idx_anomalies_user ON anomalies(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_logs_user ON notification_logs(user_id, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_user ON activity_logs(user_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_bill_records_user ON bill_records(user_id);
+
+-- =============================================================================
+-- MIGRATION: Run this AFTER the initial schema if tables already exist
+-- =============================================================================
+-- ALTER TABLE energy_data ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT NULL;
+-- ALTER TABLE predictions ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT NULL;
+-- ALTER TABLE anomalies ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT NULL;
+-- ALTER TABLE bill_records ALTER COLUMN user_id TYPE UUID USING user_id::uuid;
+-- CREATE INDEX IF NOT EXISTS idx_energy_data_user ON energy_data(user_id, date DESC);
+-- CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id, target_date ASC);
+-- CREATE INDEX IF NOT EXISTS idx_anomalies_user ON anomalies(user_id, date DESC);

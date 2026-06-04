@@ -7,6 +7,30 @@
     }
 })();
 
+/**
+ * Wrapper around window.fetch that automatically inserts authorization headers
+ * and handles 401 unauthorized errors (redirect to login).
+ */
+async function authFetch(url, options = {}) {
+    const token = localStorage.getItem('energyai_token');
+    options.headers = options.headers || {};
+    if (token) {
+        options.headers['Authorization'] = `Bearer ${token}`;
+    }
+    // If options.body is JSON, ensure Content-Type is set
+    if (options.body && typeof options.body === 'string' && !options.headers['Content-Type']) {
+        options.headers['Content-Type'] = 'application/json';
+    }
+    const res = await authFetch(url, options);
+    if (res.status === 401) {
+        localStorage.removeItem('energyai_token');
+        localStorage.removeItem('energyai_user');
+        window.location.href = 'login.html';
+        throw new Error('Authentication expired. Redirecting to login.');
+    }
+    return res;
+}
+
 // Logout handler — show confirmation modal
 function logout() {
     const modal = document.getElementById('logoutModal');
@@ -252,7 +276,7 @@ async function checkMLStatus() {
     if (!badge) return;
 
     try {
-        const res = await fetch(`${API_BASE}/ml-service/status`);
+        const res = await authFetch(`${API_BASE}/ml-service/status`);
         const data = await res.json();
         
         if (data.status === 'healthy' || data.status === 'online' || data.success) {
@@ -277,7 +301,7 @@ async function startMLService() {
     if (controlStatus) controlStatus.textContent = 'Starting service...';
 
     try {
-        const res = await fetch(`${API_BASE}/ml-service/start`, { method: 'POST' });
+        const res = await authFetch(`${API_BASE}/ml-service/start`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
             showToast('ML Service started!', 'success');
@@ -299,7 +323,7 @@ async function stopMLService() {
     const controlStatus = document.getElementById('ml-control-status');
 
     try {
-        const res = await fetch(`${API_BASE}/ml-service/stop`, { method: 'POST' });
+        const res = await authFetch(`${API_BASE}/ml-service/stop`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
             showToast('ML Service stopped', 'info');
@@ -317,7 +341,7 @@ async function stopMLService() {
 // ===== Real-Time Status Cards =====
 async function loadRealtimeStatus() {
     try {
-        const res = await fetch(`${API_BASE}/realtime-status`);
+        const res = await authFetch(`${API_BASE}/realtime-status`);
         const data = await res.json();
 
         if (data.success) {
@@ -517,7 +541,7 @@ if (processBillBtn) {
         }, 800);
 
         try {
-            const res = await fetch(`${API_BASE}/upload-bill`, {
+            const res = await authFetch(`${API_BASE}/upload-bill`, {
                 method: 'POST',
                 body: formData
             });
@@ -539,7 +563,7 @@ if (processBillBtn) {
                     // Wait 2 seconds before checking status
                     await new Promise(resolve => setTimeout(resolve, 2000));
 
-                    const statusRes = await fetch(`${API_BASE}/bill-status/${data.billId}`);
+                    const statusRes = await authFetch(`${API_BASE}/bill-status/${data.billId}`);
                     const statusData = await statusRes.json();
 
                     if (statusData.status === 'success') {
@@ -794,7 +818,7 @@ if (confirmBillBtn) {
         };
         
         try {
-            const res = await fetch(`${API_BASE.replace('/auth', '')}/confirm-bill`, {
+            const res = await authFetch(`${API_BASE.replace('/auth', '')}/confirm-bill`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -861,7 +885,7 @@ uploadForm.addEventListener('submit', async (e) => {
     uploadStatus.style.color = "#64748b";
 
     try {
-        const res = await fetch(`${API_BASE}/upload-data`, {
+        const res = await authFetch(`${API_BASE}/upload-data`, {
             method: 'POST',
             body: formData
         });
@@ -889,7 +913,7 @@ trainBtn.addEventListener('click', async () => {
     trainBtn.disabled = true;
 
     try {
-        const res = await fetch(`${API_BASE}/train-model`);
+        const res = await authFetch(`${API_BASE}/train-model`);
         const data = await res.json();
         if (data.success) {
             showToast('Models trained successfully!', 'success');
@@ -908,7 +932,7 @@ trainBtn.addEventListener('click', async () => {
 predictBtn.addEventListener('click', async () => {
     predictBtn.textContent = 'Predicting...';
     try {
-        const res = await fetch(`${API_BASE}/predict`);
+        const res = await authFetch(`${API_BASE}/predict`);
         const data = await res.json();
         if (data.success && data.predictions.length > 0) {
             const pred = data.predictions[0];
@@ -930,7 +954,7 @@ predictBtn.addEventListener('click', async () => {
 anomalyBtn.addEventListener('click', async () => {
     anomalyBtn.textContent = 'Analyzing...';
     try {
-        const res = await fetch(`${API_BASE}/anomaly-detection`);
+        const res = await authFetch(`${API_BASE}/anomaly-detection`);
         const data = await res.json();
         if (data.success) {
             renderAnomalyChart(data.anomalies);
@@ -957,7 +981,7 @@ getRecsBtn.addEventListener('click', loadRecommendations);
 async function loadRecommendations() {
     recsList.innerHTML = '<li>Loading...</li>';
     try {
-        const res = await fetch(`${API_BASE}/recommendations`);
+        const res = await authFetch(`${API_BASE}/recommendations`);
         const data = await res.json();
         if (data.success) {
             recsList.innerHTML = '';
@@ -990,14 +1014,14 @@ async function renderReportsTable() {
         // Try enhanced data first (has anomaly info)
         let records = [];
         try {
-            const res = await fetch(`${API_BASE}/enhanced-historical`);
+            const res = await authFetch(`${API_BASE}/enhanced-historical`);
             const data = await res.json();
             if (data.success && data.data.length > 0) {
                 records = data.data;
             }
         } catch {
             // fallback to basic
-            const res = await fetch(`${API_BASE}/historical-data`);
+            const res = await authFetch(`${API_BASE}/historical-data`);
             const data = await res.json();
             if (data.success && data.data.length > 0) {
                 records = data.data;
@@ -1072,13 +1096,33 @@ function getUserDataKey() {
 async function checkDataAndRender() {
     const emptyState = document.getElementById('empty-state');
     const dashContent = document.getElementById('dashboard-content');
+    const badgeEl = document.getElementById('dataset-status-badge');
 
     try {
-        const res = await fetch(`${API_BASE}/enhanced-historical`);
-        const data = await res.json();
-        const dataExists = data.success && data.data && data.data.length > 0;
+        // Fetch user data status
+        const statusRes = await authFetch(`${API_BASE}/user-data-status`);
+        const statusData = await statusRes.json();
+        const hasData = statusData.success && statusData.hasData;
 
-        if (dataExists) {
+        // Update dataset status badge
+        if (badgeEl) {
+            badgeEl.style.display = 'flex';
+            badgeEl.className = 'status-badge'; // reset classes
+            const textEl = badgeEl.querySelector('.status-text');
+            
+            if (statusData.datasetStatus === 'ready') {
+                badgeEl.classList.add('status-ready');
+                if (textEl) textEl.textContent = 'Dataset Ready';
+            } else if (statusData.datasetStatus === 'processing') {
+                badgeEl.classList.add('status-processing');
+                if (textEl) textEl.textContent = 'Processing...';
+            } else {
+                badgeEl.classList.add('status-not-uploaded');
+                if (textEl) textEl.textContent = 'No Dataset';
+            }
+        }
+
+        if (hasData) {
             if (emptyState) emptyState.style.display = 'none';
             if (dashContent) dashContent.style.display = 'block';
 
@@ -1095,15 +1139,16 @@ async function checkDataAndRender() {
             if (dashContent) dashContent.style.display = 'none';
         }
     } catch (err) {
-        console.error('Data load failed', err);
+        console.error('Data status load failed', err);
         if (emptyState) emptyState.style.display = 'flex';
+        if (dashContent) dashContent.style.display = 'none';
     }
 }
 
 async function loadSampleData() {
     showToast('Initializing sample dataset...', 'info');
     try {
-        const res = await fetch(`${API_BASE}/upload-data`, {
+        const res = await authFetch(`${API_BASE}/upload-data`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ isSample: true })
@@ -1126,7 +1171,7 @@ function markUserDataInitialized() {
 // ===== Enhanced Historical Data with Anomaly Overlay =====
 async function loadEnhancedHistorical() {
     try {
-        const res = await fetch(`${API_BASE}/enhanced-historical`);
+        const res = await authFetch(`${API_BASE}/enhanced-historical`);
         const data = await res.json();
         if (data.success && data.data.length > 0) {
             renderEnhancedMainChart(data.data, 'daily');
@@ -1134,7 +1179,7 @@ async function loadEnhancedHistorical() {
     } catch (err) {
         console.error('Failed to load enhanced data', err);
         try {
-            const res = await fetch(`${API_BASE}/historical-data`);
+            const res = await authFetch(`${API_BASE}/historical-data`);
             const data = await res.json();
             if (data.success && data.data.length > 0) {
                 renderBasicMainChart(data.data);
@@ -1441,7 +1486,7 @@ function setupSettings() {
         statusMsg.style.color = '#64748b';
 
         try {
-            const res = await fetch(`${AUTH_BASE}/update-profile`, {
+            const res = await authFetch(`${AUTH_BASE}/update-profile`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1472,7 +1517,7 @@ function setupSettings() {
         testBtn.disabled = true;
 
         try {
-            const res = await fetch(`${NOTIF_BASE}/test-email`, {
+            const res = await authFetch(`${NOTIF_BASE}/test-email`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id })
@@ -1520,7 +1565,7 @@ function loadSettingsValues() {
         btn.textContent = 'Updating...';
         btn.disabled = true;
         try {
-            const res = await fetch(`${AUTH_BASE}/change-password`, {
+            const res = await authFetch(`${AUTH_BASE}/change-password`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, currentPassword: curr, newPassword: newPw })
@@ -1581,7 +1626,7 @@ function aggregateByDay(records) {
 let dailyUsageChartIns;
 async function loadDailyUsageChart() {
     try {
-        const res = await fetch(`${API_BASE}/enhanced-historical`);
+        const res = await authFetch(`${API_BASE}/enhanced-historical`);
         const data = await res.json();
         if (!data.success || !data.data.length) return;
         // Aggregate hourly/multiple records into daily totals
@@ -1634,7 +1679,7 @@ async function loadDailyUsageChart() {
 let weeklyCompChartIns;
 async function loadWeeklyCompChart() {
     try {
-        const res = await fetch(`${API_BASE}/enhanced-historical`);
+        const res = await authFetch(`${API_BASE}/enhanced-historical`);
         const data = await res.json();
         if (!data.success || !data.data.length) return;
         const dailyData = aggregateByDay(data.data);
@@ -1689,7 +1734,7 @@ async function loadWeeklyPredictions() {
     const list = document.getElementById('prediction-list');
     if (btn) { btn.textContent = 'Generating...'; btn.disabled = true; }
     try {
-        const res = await fetch(`${API_BASE}/predict-week`);
+        const res = await authFetch(`${API_BASE}/predict-week`);
         const data = await res.json();
         if (data.success && data.predictions && data.predictions.length > 0) {
             // Render list
@@ -1747,7 +1792,7 @@ async function loadWeeklyPredictions() {
 let monthlyPredChartIns;
 async function loadMonthlyProjection() {
     try {
-        const res = await fetch(`${API_BASE}/monthly-projection`);
+        const res = await authFetch(`${API_BASE}/monthly-projection`);
         const data = await res.json();
         if (!data.success) return;
 
@@ -1849,7 +1894,7 @@ async function loadNotificationHistory() {
     if (!feed) return;
     try {
         const url = currentUser.id ? `${NOTIF_BASE}/history?userId=${currentUser.id}` : `${NOTIF_BASE}/history`;
-        const res = await fetch(url);
+        const res = await authFetch(url);
         const data = await res.json();
         if (data.success && data.data && data.data.length > 0) {
             feed.innerHTML = '';
@@ -1874,7 +1919,7 @@ async function loadAnomalyLog() {
     const log = document.getElementById('anomaly-log');
     if (!log) return;
     try {
-        const res = await fetch(`${API_BASE}/anomaly-detection`);
+        const res = await authFetch(`${API_BASE}/anomaly-detection`);
         const data = await res.json();
         if (data.success && data.anomalies && data.anomalies.length > 0) {
             log.innerHTML = '';
@@ -2028,7 +2073,7 @@ async function loadActivityLog() {
     if (!tbody) return;
     try {
         const url = currentUser.id ? `${API_BASE}/activity-log?userId=${currentUser.id}` : `${API_BASE}/activity-log`;
-        const res = await fetch(url);
+        const res = await authFetch(url);
         const data = await res.json();
         if (data.success && data.data && data.data.length > 0) {
             tbody.innerHTML = '';
@@ -2063,7 +2108,7 @@ async function loadBillHistory() {
     if (!tbody) return;
 
     try {
-        const res = await fetch(`${API_BASE}/bill-history`);
+        const res = await authFetch(`${API_BASE}/bill-history`);
         const data = await res.json();
 
         if (data.success && data.records && data.records.length > 0) {
@@ -2174,7 +2219,7 @@ async function loadFullBillHistory() {
     if (!tbody) return;
 
     try {
-        const res = await fetch(`${API_BASE}/bill-history`);
+        const res = await authFetch(`${API_BASE}/bill-history`);
         const data = await res.json();
         if (data.success && data.records && data.records.length > 0) {
             allBillRecords = data.records;

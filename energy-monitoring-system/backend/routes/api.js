@@ -6,6 +6,7 @@ const fs = require('fs');
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) { fs.mkdirSync(uploadsDir, { recursive: true }); }
 const dataController = require('../controllers/dataController');
+const authMiddleware = require('../middleware/authMiddleware');
 const { supabase } = require('../utils/supabase');
 const axios = require('axios');
 
@@ -46,26 +47,27 @@ const billUpload = multer({
     }
 });
 
-router.post('/upload-data', upload.single('dataset'), dataController.uploadData);
-router.get('/train-model', dataController.trainModel);
-router.get('/predict', dataController.getPredictions);
-router.get('/anomaly-detection', dataController.getAnomalies);
-router.get('/recommendations', dataController.getRecommendations);
+router.post('/upload-data', authMiddleware, upload.single('dataset'), dataController.uploadData);
+router.get('/train-model', authMiddleware, dataController.trainModel);
+router.get('/predict', authMiddleware, dataController.getPredictions);
+router.get('/anomaly-detection', authMiddleware, dataController.getAnomalies);
+router.get('/recommendations', authMiddleware, dataController.getRecommendations);
+router.get('/user-data-status', authMiddleware, dataController.getUserDataStatus);
 
 // Internal routes for frontend charts
-router.get('/historical-data', dataController.getHistoricalData);
+router.get('/historical-data', authMiddleware, dataController.getHistoricalData);
 
 // Enhancement routes
-router.get('/realtime-status', dataController.getRealtimeStatus);
-router.get('/enhanced-historical', dataController.getEnhancedHistorical);
+router.get('/realtime-status', authMiddleware, dataController.getRealtimeStatus);
+router.get('/enhanced-historical', authMiddleware, dataController.getEnhancedHistorical);
 
 // Advanced prediction routes
-router.get('/predict-week', dataController.getWeeklyPredictions);
-router.get('/monthly-projection', dataController.getMonthlyProjection);
+router.get('/predict-week', authMiddleware, dataController.getWeeklyPredictions);
+router.get('/monthly-projection', authMiddleware, dataController.getMonthlyProjection);
 
 // ===== Bill Upload & OCR Processing =====
 
-router.post('/upload-bill', billUpload.single('bill'), async (req, res) => {
+router.post('/upload-bill', authMiddleware, billUpload.single('bill'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No bill file uploaded.' });
@@ -73,12 +75,13 @@ router.post('/upload-bill', billUpload.single('bill'), async (req, res) => {
 
         const filePath = path.resolve(req.file.path);
         const ext = path.extname(req.file.originalname).toLowerCase();
+        const userId = req.user.id;
         
         // 1. Save initial processing record to Supabase
         const { data, error } = await supabase
             .from('bill_records')
             .insert({
-                user_id: 'default',
+                user_id: userId,
                 original_file_name: req.file.originalname,
                 file_type: ext === '.pdf' ? 'pdf' : 'image',
                 status: 'processing'
@@ -103,6 +106,7 @@ router.post('/upload-bill', billUpload.single('bill'), async (req, res) => {
                     filename: req.file.originalname,
                     contentType: req.file.mimetype
                 });
+                formData.append('user_id', userId);
 
                 console.log(`[backend] Sending bill ${billId} to ML Service for OCR...`);
                 const response = await axios.post(`${ML_SERVICE_URL}/ocr-bill`, formData, {
@@ -161,16 +165,17 @@ router.post('/upload-bill', billUpload.single('bill'), async (req, res) => {
     }
 });
 
-router.get('/bill-status/:id', async (req, res) => {
+router.get('/bill-status/:id', authMiddleware, async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('bill_records')
             .select('*')
             .eq('id', req.params.id)
+            .eq('user_id', req.user.id)
             .single();
 
         if (error) throw error;
-        if (!data) return res.status(404).json({ success: false, message: 'Bill record not found' });
+        if (!data) return res.status(404).json({ success: false, message: 'Bill record not found or access denied' });
 
         if (data.status === 'success') {
             res.json({
@@ -208,9 +213,12 @@ router.get('/bill-status/:id', async (req, res) => {
     }
 });
 
-router.post('/confirm-bill', async (req, res) => {
+router.post('/confirm-bill', authMiddleware, async (req, res) => {
     try {
-        const response = await axios.post(`${ML_SERVICE_URL}/confirm-bill`, req.body, {
+        const response = await axios.post(`${ML_SERVICE_URL}/confirm-bill`, {
+            ...req.body,
+            user_id: req.user.id
+        }, {
             timeout: 120000 // 2 min timeout
         });
         if (response.data.success) {
@@ -225,11 +233,12 @@ router.post('/confirm-bill', async (req, res) => {
     }
 });
 
-router.get('/bill-history', async (req, res) => {
+router.get('/bill-history', authMiddleware, async (req, res) => {
     try {
         const { data: records, error } = await supabase
             .from('bill_records')
             .select('*')
+            .eq('user_id', req.user.id)
             .order('created_at', { ascending: false })
             .limit(50);
         if (error) throw error;
@@ -258,7 +267,7 @@ router.get('/bill-history', async (req, res) => {
     } catch (error) {
         // Fallback: try ML service directly
         try {
-            const response = await axios.get(`${ML_SERVICE_URL}/bill-history`);
+            const response = await axios.get(`${ML_SERVICE_URL}/bill-history?user_id=${req.user.id}`);
             res.json(response.data);
         } catch (e) {
             res.status(500).json({ success: false, message: error.message });
@@ -267,18 +276,15 @@ router.get('/bill-history', async (req, res) => {
 });
 
 // Activity log endpoint
-router.get('/activity-log', async (req, res) => {
+router.get('/activity-log', authMiddleware, async (req, res) => {
     try {
-        const userId = req.query.userId;
+        const userId = req.user.id;
         let query = supabase
             .from('activity_logs')
             .select('*')
+            .eq('user_id', userId)
             .order('timestamp', { ascending: false })
             .limit(30);
-        
-        if (userId) {
-            query = query.eq('user_id', userId);
-        }
         
         const { data: logs, error } = await query;
         if (error) throw error;
@@ -299,9 +305,11 @@ router.get('/activity-log', async (req, res) => {
 });
 
 // Full ML Pipeline — retrain + predict + anomalies in one call
-router.post('/full-pipeline', async (req, res) => {
+router.post('/full-pipeline', authMiddleware, async (req, res) => {
     try {
-        const response = await axios.post(`${ML_SERVICE_URL}/full-pipeline`, {}, {
+        const response = await axios.post(`${ML_SERVICE_URL}/full-pipeline`, {
+            user_id: req.user.id
+        }, {
             timeout: 120000 // 2 min for training
         });
         res.json(response.data);

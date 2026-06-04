@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 
-def process_and_store_csv(file_path, db):
+def process_and_store_csv(file_path, db, user_id=None):
     """Process a CSV file and store records in Supabase.
 
     Automatically detects date and units columns by name.
@@ -19,6 +19,7 @@ def process_and_store_csv(file_path, db):
     Args:
         file_path: Path to the CSV file.
         db: Supabase Client instance.
+        user_id: ID of the authenticated user.
 
     Returns:
         int: Number of records inserted.
@@ -71,8 +72,11 @@ def process_and_store_csv(file_path, db):
     if len(df) == 0:
         raise ValueError("No valid records found in the CSV after processing.")
 
-    # Clear old data (dataset replacement)
-    db.table('energy_data').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+    # Clear old data (dataset replacement) for this user specifically
+    if user_id:
+        db.table('energy_data').delete().eq('user_id', user_id).execute()
+    else:
+        db.table('energy_data').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
 
     records = []
     for _, row in df.iterrows():
@@ -81,7 +85,8 @@ def process_and_store_csv(file_path, db):
             "units": float(row['units']),
             "predicted_units": None,
             "anomaly": False,
-            "source": "csv"
+            "source": "csv",
+            "user_id": user_id
         })
 
     if records:

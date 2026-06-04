@@ -11,7 +11,7 @@ from sklearn.ensemble import IsolationForest
 import numpy as np
 
 
-def detect_abnormalities(db):
+def detect_abnormalities(db, user_id=None):
     """Detect anomalies in energy consumption data using Isolation Forest.
 
     Enhances basic detection with:
@@ -21,12 +21,17 @@ def detect_abnormalities(db):
 
     Args:
         db: Supabase Client instance.
+        user_id: ID of the authenticated user.
 
     Returns:
         list: Anomaly dicts with date, units, expected_units, severity,
               deviation_pct, and rolling stats.
     """
-    res = db.table('energy_data').select('*').order('date', desc=False).execute()
+    query = db.table('energy_data').select('*')
+    if user_id:
+        query = query.eq('user_id', user_id)
+    res = query.order('date', desc=False).execute()
+    
     data = res.data or []
     if not data or len(data) < 7:
         return []
@@ -66,9 +71,13 @@ def detect_abnormalities(db):
          (abs(df['units'] / df['rolling_mean_7'] - 1) > 0.5))
     ].copy()
 
-    # Clear previous anomaly records and flags
-    db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-    db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
+    # Clear previous anomaly records and flags for this user specifically
+    if user_id:
+        db.table('anomalies').delete().eq('user_id', user_id).execute()
+        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+    else:
+        db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
 
     anomaly_records = []
     
@@ -93,11 +102,12 @@ def detect_abnormalities(db):
             "severity": severity,
             "rolling_mean": float(round(row['rolling_mean_7'], 2)),
             "rolling_std": float(round(row['rolling_std_7'], 2)),
-            "raw_score": float(round(row['anomaly_raw_score'], 4))
+            "raw_score": float(round(row['anomaly_raw_score'], 4)),
+            "user_id": user_id
         }
         anomaly_records.append(rec)
 
-        # Flag in original data
+        # Flag in original data (which is already scoped by user_id)
         db.table('energy_data').update({
             'anomaly': True,
             'anomaly_severity': severity

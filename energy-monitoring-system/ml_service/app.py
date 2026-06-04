@@ -65,6 +65,7 @@ def index():
 def process_csv():
     """Process an uploaded CSV file and store records in database."""
     # Check if a file is uploaded directly
+    user_id = request.form.get('user_id')
     if 'dataset' in request.files:
         file = request.files['dataset']
         if file.filename == '':
@@ -75,7 +76,7 @@ def process_csv():
         file.save(file_path)
         
         try:
-            inserted_count = process_and_store_csv(file_path, db)
+            inserted_count = process_and_store_csv(file_path, db, user_id=user_id)
             return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
         except Exception as e:
             traceback.print_exc()
@@ -89,11 +90,12 @@ def process_csv():
         # Fallback to local file path
         data = request.json or {}
         file_path = data.get('file_path')
+        user_id = data.get('user_id')
         if not file_path:
             return jsonify({"success": False, "message": "No file path or dataset provided"}), 400
         
         try:
-            inserted_count = process_and_store_csv(file_path, db)
+            inserted_count = process_and_store_csv(file_path, db, user_id=user_id)
             return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
         except Exception as e:
             traceback.print_exc()
@@ -104,8 +106,9 @@ def process_csv():
 @app.route('/train', methods=['GET'])
 def train():
     """Train all ML models (Linear Regression + LSTM) on historical data."""
+    user_id = request.args.get('user_id')
     try:
-        metrics = train_all_models(db)
+        metrics = train_all_models(db, user_id=user_id)
         return jsonify({"success": True, "message": "Models trained successfully.", "metrics": metrics})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -114,8 +117,9 @@ def train():
 @app.route('/predict', methods=['GET'])
 def predict():
     """Generate a single next-day prediction."""
+    user_id = request.args.get('user_id')
     try:
-        predictions = generate_predictions(db)
+        predictions = generate_predictions(db, user_id=user_id)
         return jsonify({"success": True, "predictions": predictions})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -130,8 +134,9 @@ def predict_week():
         - targetDate, predicted_units, dayName, modelUsed
         Also includes weeklyTotal (sum of all 7 days).
     """
+    user_id = request.args.get('user_id')
     try:
-        predictions = generate_weekly_predictions(db)
+        predictions = generate_weekly_predictions(db, user_id=user_id)
         weekly_total = sum(p['predicted_units'] for p in predictions) if predictions else 0.0
         return jsonify({
             "success": True,
@@ -155,16 +160,23 @@ def monthly_projection():
         actual usage so far, and daily average.
     """
     try:
+        user_id = request.args.get('user_id')
         # Get all data for the current month
         now = datetime.now()
         month_start = datetime(now.year, now.month, 1)
         
         # Get all data for the current month
-        res_month = db.table('energy_data').select('*').gte('date', month_start.isoformat()).order('date', desc=False).execute()
+        query_month = db.table('energy_data').select('*').gte('date', month_start.isoformat())
+        if user_id:
+            query_month = query_month.eq('user_id', user_id)
+        res_month = query_month.order('date', desc=False).execute()
         month_data = res_month.data or []
         
         # Get last 7 days for average calculation
-        res_recent = db.table('energy_data').select('*').order('date', desc=True).limit(7).execute()
+        query_recent = db.table('energy_data').select('*')
+        if user_id:
+            query_recent = query_recent.eq('user_id', user_id)
+        res_recent = query_recent.order('date', desc=True).limit(7).execute()
         recent_data = res_recent.data or []
         
         if not recent_data:
@@ -212,8 +224,9 @@ def monthly_projection():
 @app.route('/detect-anomalies', methods=['GET'])
 def anomalies():
     """Run anomaly detection using Isolation Forest."""
+    user_id = request.args.get('user_id')
     try:
-        anomalies_list = detect_abnormalities(db)
+        anomalies_list = detect_abnormalities(db, user_id=user_id)
         return jsonify({"success": True, "anomalies": anomalies_list})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -222,8 +235,12 @@ def anomalies():
 @app.route('/latest-prediction', methods=['GET'])
 def latest_prediction():
     """Return the most recent prediction for recommendation generation."""
+    user_id = request.args.get('user_id')
     try:
-        res = db.table('predictions').select('*').order('target_date', desc=True).limit(1).execute()
+        query = db.table('predictions').select('*')
+        if user_id:
+            query = query.eq('user_id', user_id)
+        res = query.order('target_date', desc=True).limit(1).execute()
         latest = res.data[0] if res.data else None
         if not latest:
             return jsonify({"success": True, "predicted_units": 0, "current_trend": "normal"})
@@ -241,9 +258,13 @@ def latest_prediction():
 @app.route('/smart-recommendations', methods=['GET'])
 def smart_recommendations():
     """Generate context-aware energy recommendations based on usage patterns."""
+    user_id = request.args.get('user_id')
     try:
         # Get historical data
-        res_hist = db.table('energy_data').select('*').order('date', desc=False).execute()
+        query_hist = db.table('energy_data').select('*')
+        if user_id:
+            query_hist = query_hist.eq('user_id', user_id)
+        res_hist = query_hist.order('date', desc=False).execute()
         data = res_hist.data or []
         if not data:
             return jsonify({"success": True, "recommendations": []})
@@ -256,7 +277,10 @@ def smart_recommendations():
         recent_avg = df['units'].tail(7).mean() if len(df) >= 7 else avg_units
 
         # Get latest prediction
-        res_pred = db.table('predictions').select('*').order('target_date', desc=True).limit(1).execute()
+        query_pred = db.table('predictions').select('*')
+        if user_id:
+            query_pred = query_pred.eq('user_id', user_id)
+        res_pred = query_pred.order('target_date', desc=True).limit(1).execute()
         latest_pred = res_pred.data[0] if res_pred.data else None
         predicted = float(latest_pred.get('predicted_units', 0)) if latest_pred else 0
 
@@ -402,8 +426,9 @@ def process_bill():
         energy_records = bill_data_to_energy_records(bill_data)
         
         # ---- Step 3: Store bill record ----
+        user_id = request.form.get('user_id', 'default')
         bill_record = {
-            "user_id": "default",
+            "user_id": user_id,
             "consumer_number": bill_data.get('consumer_number'),
             "billing_month": bill_data.get('billing_month'),
             "total_units": float(bill_data.get('total_units')) if bill_data.get('total_units') is not None else None,
@@ -429,22 +454,28 @@ def process_bill():
                     "units": float(rec['units']),
                     "predicted_units": None,
                     "anomaly": False,
-                    "source": "bill_ocr"
+                    "source": "bill_ocr",
+                    "user_id": user_id
                 })
             db.table('energy_data').insert(records_to_insert).execute()
             print(f"[pipeline] Inserted {len(records_to_insert)} energy records into DB")
         
         # ---- Step 5: Clear stale predictions and anomalies ----
         print("[pipeline] Step 5: Clearing old predictions and anomalies")
-        db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-        db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        if user_id:
+            db.table('predictions').delete().eq('user_id', user_id).execute()
+            db.table('anomalies').delete().eq('user_id', user_id).execute()
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+        else:
+            db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
         # ---- Step 6: Auto-retrain models ----
         train_metrics = {}
         try:
             print("[pipeline] Step 6: Retraining ML models on updated dataset")
-            train_metrics = train_all_models(db)
+            train_metrics = train_all_models(db, user_id=user_id)
             print(f"[pipeline] Training complete: {train_metrics.get('total_records', 0)} records, "
                   f"LR R²={train_metrics.get('LinearRegression_R2', 'N/A')}")
         except Exception as te:
@@ -455,7 +486,7 @@ def process_bill():
         fresh_predictions = []
         try:
             print("[pipeline] Step 7: Generating fresh predictions")
-            fresh_predictions = generate_predictions(db)
+            fresh_predictions = generate_predictions(db, user_id=user_id)
             print(f"[pipeline] Generated {len(fresh_predictions)} predictions")
         except Exception as pe:
             print(f"[pipeline] Prediction skipped: {pe}")
@@ -464,13 +495,16 @@ def process_bill():
         fresh_anomalies = []
         try:
             print("[pipeline] Step 8: Running anomaly detection")
-            fresh_anomalies = detect_abnormalities(db)
+            fresh_anomalies = detect_abnormalities(db, user_id=user_id)
             print(f"[pipeline] Detected {len(fresh_anomalies)} anomalies")
         except Exception as ae:
             print(f"[pipeline] Anomaly detection skipped: {ae}")
         
         # Fetch current record count
-        res_count = db.table('energy_data').select('id', count='exact', head=True).execute()
+        query_count = db.table('energy_data').select('id', count='exact', head=True)
+        if user_id:
+            query_count = query_count.eq('user_id', user_id)
+        res_count = query_count.execute()
         dataset_size = res_count.count if res_count.count is not None else 0
 
         # Build response
@@ -527,24 +561,34 @@ def full_pipeline():
     Called after CSV upload or when user wants to refresh all analytics.
     Returns fresh predictions, anomaly count, and training metrics.
     """
+    data = request.json or {}
+    user_id = data.get('user_id')
     try:
-        # Clear stale predictions and anomalies
-        db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-        db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        # Clear stale predictions and anomalies for this user
+        if user_id:
+            db.table('predictions').delete().eq('user_id', user_id).execute()
+            db.table('anomalies').delete().eq('user_id', user_id).execute()
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+        else:
+            db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
-        res_count = db.table('energy_data').select('id', count='exact', head=True).execute()
+        query_count = db.table('energy_data').select('id', count='exact', head=True)
+        if user_id:
+            query_count = query_count.eq('user_id', user_id)
+        res_count = query_count.execute()
         record_count = res_count.count if res_count.count is not None else 0
 
         if record_count == 0:
             return jsonify({"success": False, "message": "No data to analyze. Upload data first."}), 400
         
-        print(f"[full-pipeline] Starting with {record_count} records")
+        print(f"[full-pipeline] Starting for user {user_id} with {record_count} records")
         
         # Train
         metrics = {}
         try:
-            metrics = train_all_models(db)
+            metrics = train_all_models(db, user_id=user_id)
             print(f"[full-pipeline] Training complete")
         except Exception as e:
             print(f"[full-pipeline] Training error: {e}")
@@ -553,7 +597,7 @@ def full_pipeline():
         # Predict
         predictions = []
         try:
-            predictions = generate_predictions(db)
+            predictions = generate_predictions(db, user_id=user_id)
             print(f"[full-pipeline] Generated {len(predictions)} predictions")
         except Exception as e:
             print(f"[full-pipeline] Prediction error: {e}")
@@ -561,7 +605,7 @@ def full_pipeline():
         # Anomalies
         anomalies_count = 0
         try:
-            anomalies = detect_abnormalities(db)
+            anomalies = detect_abnormalities(db, user_id=user_id)
             anomalies_count = len(anomalies)
             print(f"[full-pipeline] Detected {anomalies_count} anomalies")
         except Exception as e:
@@ -648,6 +692,7 @@ def confirm_bill():
         return jsonify({"success": False, "message": "No data provided"}), 400
     
     # Extract fields from payload
+    user_id = data.get('user_id', 'default')
     consumer_number = data.get('consumerNumber')
     billing_month = data.get('billingMonth')
     total_units = data.get('totalUnits')
@@ -678,7 +723,7 @@ def confirm_bill():
         
         # ---- Step 3: Store bill record ----
         bill_record = {
-            "user_id": "default",
+            "user_id": user_id,
             "consumer_number": consumer_number,
             "billing_month": billing_month,
             "total_units": float(total_units) if total_units is not None else None,
@@ -704,22 +749,28 @@ def confirm_bill():
                     "units": float(rec['units']),
                     "predicted_units": None,
                     "anomaly": False,
-                    "source": "bill_ocr"
+                    "source": "bill_ocr",
+                    "user_id": user_id
                 })
             db.table('energy_data').insert(records_to_insert).execute()
             print(f"[pipeline] Inserted {len(records_to_insert)} energy records into DB")
         
         # ---- Step 5: Clear stale predictions and anomalies ----
         print("[pipeline] Step 5: Clearing old predictions and anomalies")
-        db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-        db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        if user_id:
+            db.table('predictions').delete().eq('user_id', user_id).execute()
+            db.table('anomalies').delete().eq('user_id', user_id).execute()
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+        else:
+            db.table('predictions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
         
         # ---- Step 6: Auto-retrain models ----
         train_metrics = {}
         try:
             print("[pipeline] Step 6: Retraining ML models on updated dataset")
-            train_metrics = train_all_models(db)
+            train_metrics = train_all_models(db, user_id=user_id)
             print(f"[pipeline] Training complete: {train_metrics.get('total_records', 0)} records, "
                   f"LR R²={train_metrics.get('LinearRegression_R2', 'N/A')}")
         except Exception as te:
@@ -730,7 +781,7 @@ def confirm_bill():
         fresh_predictions = []
         try:
             print("[pipeline] Step 7: Generating fresh predictions")
-            fresh_predictions = generate_predictions(db)
+            fresh_predictions = generate_predictions(db, user_id=user_id)
             print(f"[pipeline] Generated {len(fresh_predictions)} predictions")
         except Exception as pe:
             print(f"[pipeline] Prediction skipped: {pe}")
@@ -739,13 +790,33 @@ def confirm_bill():
         fresh_anomalies = []
         try:
             print("[pipeline] Step 8: Running anomaly detection")
-            fresh_anomalies = detect_abnormalities(db)
+            fresh_anomalies = detect_abnormalities(db, user_id=user_id)
             print(f"[pipeline] Detected {len(fresh_anomalies)} anomalies")
         except Exception as ae:
             print(f"[pipeline] Anomaly detection skipped: {ae}")
         
         # Fetch current record count
-        res_count = db.table('energy_data').select('id', count='exact', head=True).execute()
+        query_count = db.table('energy_data').select('id', count='exact', head=True)
+        if user_id:
+            query_count = query_count.eq('user_id', user_id)
+        res_count = query_count.execute()
+        dataset_size = res_count.count if res_count.count is not None else 0
+
+        response_data = {
+            "success": True,
+            "message": f"Bill processed! {len(energy_records)} records generated, models retrained.",
+            "recordsGenerated": len(energy_records),
+            "pipelineResults": {
+                "trained": "status" not in train_metrics,
+                "predictionsGenerated": len(fresh_predictions),
+                "anomaliesDetected": len(fresh_anomalies),
+                "datasetSize": dataset_size
+            }
+        }
+        return jsonify(response_data)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "message": f"Failed to process bill confirmation: {str(e)}"}), 500
         dataset_size = res_count.count if res_count.count is not None else 0
 
         response_data = {
@@ -768,8 +839,12 @@ def confirm_bill():
 @app.route('/bill-history', methods=['GET'])
 def bill_history():
     """Return stored bill records for display."""
+    user_id = request.args.get('user_id')
     try:
-        res = db.table('bill_records').select('*').order('created_at', desc=True).limit(50).execute()
+        query = db.table('bill_records').select('*')
+        if user_id:
+            query = query.eq('user_id', user_id)
+        res = query.order('created_at', desc=True).limit(50).execute()
         records = res.data or []
         result = []
         for r in records:
