@@ -12,6 +12,10 @@ services:
         value: production
       - key: MONGODB_URI
         sync: false  # Set manually in Render dashboard
+      - key: SUPABASE_URL
+        sync: false  # Set manually in Render dashboard
+      - key: SUPABASE_KEY
+        sync: false  # Set manually in Render dashboard
       - key: JWT_SECRET
         generateValue: true
       - key: ML_SERVICE_URL
@@ -32,6 +36,10 @@ services:
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1
     envVars:
       - key: MONGODB_URI
+        sync: false  # Set manually in Render dashboard
+      - key: SUPABASE_URL
+        sync: false  # Set manually in Render dashboard
+      - key: SUPABASE_KEY
         sync: false  # Set manually in Render dashboard
       - key: PORT
         value: 5000

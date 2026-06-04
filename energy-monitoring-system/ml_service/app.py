@@ -63,18 +63,42 @@ print("[startup] OCR reader lazyloading configured.")
 
 @app.route('/process-csv', methods=['POST'])
 def process_csv():
-    """Process an uploaded CSV file and store records in MongoDB."""
-    data = request.json
-    file_path = data.get('file_path')
-    if not file_path:
-        return jsonify({"success": False, "message": "No file path provided"}), 400
-    
-    try:
-        inserted_count = process_and_store_csv(file_path, db)
-        return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"success": False, "message": str(e)}), 500
+    """Process an uploaded CSV file and store records in database."""
+    # Check if a file is uploaded directly
+    if 'dataset' in request.files:
+        file = request.files['dataset']
+        if file.filename == '':
+            return jsonify({"success": False, "message": "No file selected"}), 400
+        
+        safe_name = f"uploaded_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+        file_path = os.path.join(UPLOAD_DIR, safe_name)
+        file.save(file_path)
+        
+        try:
+            inserted_count = process_and_store_csv(file_path, db)
+            return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"success": False, "message": str(e)}), 500
+        finally:
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+    else:
+        # Fallback to local file path
+        data = request.json or {}
+        file_path = data.get('file_path')
+        if not file_path:
+            return jsonify({"success": False, "message": "No file path or dataset provided"}), 400
+        
+        try:
+            inserted_count = process_and_store_csv(file_path, db)
+            return jsonify({"success": True, "message": f"Successfully processed and stored {inserted_count} records."})
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"success": False, "message": str(e)}), 500
+
 
 
 @app.route('/train', methods=['GET'])
