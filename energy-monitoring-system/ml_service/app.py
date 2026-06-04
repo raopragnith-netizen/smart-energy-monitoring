@@ -12,6 +12,11 @@ Provides endpoints for:
 - Service health monitoring
 """
 
+import os
+os.environ["FLAGS_allocator_strategy"] = "auto_growth"
+os.environ["FLAGS_eager_delete_tensor_gb"] = "0.0"
+os.environ["FLAGS_eager_delete_scope"] = "True"
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from supabase import create_client, Client, ClientOptions
@@ -27,7 +32,6 @@ from train_model import train_all_models
 from predict import generate_predictions, generate_weekly_predictions
 from anomaly_detection import detect_abnormalities
 from bill_processor import extract_bill_data, bill_data_to_energy_records
-import os
 import traceback
 
 load_dotenv()
@@ -53,13 +57,8 @@ try:
 except Exception as e:
     print(f"[startup] ML models failed to load: {e}")
 
-try:
-    from bill_processor import _get_paddleocr_reader
-    print("[startup] Initializing OCR reader...")
-    _get_paddleocr_reader()
-    print("[startup] OCR reader initialized successfully.")
-except Exception as e:
-    print(f"[startup] OCR reader failed to initialize: {e}")
+# OCR reader is lazy-loaded on demand to stay within Render's 512MB RAM limit.
+print("[startup] OCR reader lazyloading configured.")
 
 
 @app.route('/process-csv', methods=['POST'])
