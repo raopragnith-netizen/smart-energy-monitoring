@@ -503,41 +503,82 @@ if (processBillBtn) {
         billProgressText.textContent = 'Uploading bill...';
         billUploadStatus.textContent = '';
 
-        try {
-            // Fake progress animation for better UX
-            let progress = 30;
-            const progressInterval = setInterval(() => {
-                progress += 5;
-                if (progress > 90) clearInterval(progressInterval);
-                else {
-                    billProgressFill.style.width = progress + '%';
-                    if (progress > 40) billProgressText.textContent = 'Preprocessing image...';
-                    if (progress > 55) billProgressText.textContent = 'Running PaddleOCR extraction...';
-                    if (progress > 70) billProgressText.textContent = 'Validating extracted fields...';
-                    if (progress > 85) billProgressText.textContent = 'Computing confidence scores...';
-                }
-            }, 500);
+        // Fake progress animation for better UX
+        let progress = 30;
+        const progressInterval = setInterval(() => {
+            progress += 3;
+            if (progress > 85) clearInterval(progressInterval);
+            else {
+                billProgressFill.style.width = progress + '%';
+                if (progress > 40) billProgressText.textContent = 'Preprocessing image...';
+                if (progress > 55) billProgressText.textContent = 'Running PaddleOCR extraction...';
+                if (progress > 70) billProgressText.textContent = 'Validating extracted fields...';
+            }
+        }, 800);
 
+        try {
             const res = await fetch(`${API_BASE}/upload-bill`, {
                 method: 'POST',
                 body: formData
             });
             const data = await res.json();
+
+            if (!data.success) {
+                throw new Error(data.message || 'OCR upload failed');
+            }
+
+            let extractedData = null;
+
+            if (data.billId) {
+                // Background processing: poll status endpoint
+                billProgressText.textContent = 'Computing confidence scores...';
+                const pollStart = Date.now();
+                const pollTimeout = 120000; // 2 minutes
+
+                while (Date.now() - pollStart < pollTimeout) {
+                    // Wait 2 seconds before checking status
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+
+                    const statusRes = await fetch(`${API_BASE}/bill-status/${data.billId}`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.status === 'success') {
+                        extractedData = statusData.extracted;
+                        break;
+                    } else if (statusData.status === 'failed') {
+                        throw new Error(statusData.message || 'OCR processing failed');
+                    }
+
+                    // Increment progress slightly while waiting
+                    if (progress < 95) {
+                        progress += 2;
+                        billProgressFill.style.width = Math.min(progress, 95) + '%';
+                    }
+                    const elapsed = Math.floor((Date.now() - pollStart) / 1000);
+                    billProgressText.textContent = `Extracting fields (${elapsed}s elapsed)...`;
+                }
+
+                if (!extractedData) {
+                    throw new Error('OCR processing timed out');
+                }
+            } else if (data.extracted) {
+                // Synchronous fallback (if backend runs synchronously)
+                extractedData = data.extracted;
+            } else {
+                throw new Error('No extracted data returned');
+            }
             
             clearInterval(progressInterval);
             billProgressFill.style.width = '100%';
             billProgressText.textContent = 'Complete!';
 
-            if (data.success) {
-                showToast('Bill analyzed! Please verify and correct any values.', 'success');
-                displayExtractionResults(data.extracted);
-            } else {
-                throw new Error(data.message || 'OCR extraction failed');
-            }
+            showToast('Bill analyzed! Please verify and correct any values.', 'success');
+            displayExtractionResults(extractedData);
         } catch (err) {
+            clearInterval(progressInterval);
             billUploadStatus.textContent = `Error: ${err.message}`;
             billUploadStatus.style.color = '#ef4444';
-            showToast('Failed to process bill', 'error');
+            showToast(err.message || 'Failed to process bill', 'error');
             billProgress.style.display = 'none';
         } finally {
             processBillBtn.disabled = false;

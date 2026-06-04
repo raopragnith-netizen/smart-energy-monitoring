@@ -72,35 +72,139 @@ router.post('/upload-bill', billUpload.single('bill'), async (req, res) => {
         }
 
         const filePath = path.resolve(req.file.path);
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        
+        // 1. Save initial processing record to Supabase
+        const { data, error } = await supabase
+            .from('bill_records')
+            .insert({
+                user_id: 'default',
+                original_file_name: req.file.originalname,
+                file_type: ext === '.pdf' ? 'pdf' : 'image',
+                status: 'processing'
+            })
+            .select('id')
+            .single();
 
-        // Forward to ML service as multipart
-        const FormData = require('form-data');
-        const fs = require('fs');
-        const formData = new FormData();
-        formData.append('bill', fs.createReadStream(filePath), {
-            filename: req.file.originalname,
-            contentType: req.file.mimetype
-        });
+        if (error) throw error;
+        const billId = data.id;
 
-        const response = await axios.post(`${ML_SERVICE_URL}/ocr-bill`, formData, {
-            headers: formData.getHeaders(),
-            maxContentLength: Infinity,
-            maxBodyLength: Infinity,
-            timeout: 120000 // 2 min timeout for OCR
-        });
+        // 2. Respond immediately to frontend with the billId
+        res.status(202).json({ success: true, message: 'Bill uploaded. Processing in background.', billId });
 
-        // Clean up uploaded file from backend
-        try { fs.unlinkSync(filePath); } catch (e) {}
+        // 3. Process in background
+        (async () => {
+            try {
+                // Forward to ML service as multipart
+                const FormData = require('form-data');
+                const fs = require('fs');
+                const formData = new FormData();
+                formData.append('bill', fs.createReadStream(filePath), {
+                    filename: req.file.originalname,
+                    contentType: req.file.mimetype
+                });
 
-        if (response.data.success) {
-            res.json(response.data);
-        } else {
-            res.status(400).json(response.data);
-        }
+                console.log(`[backend] Sending bill ${billId} to ML Service for OCR...`);
+                const response = await axios.post(`${ML_SERVICE_URL}/ocr-bill`, formData, {
+                    headers: formData.getHeaders(),
+                    maxContentLength: Infinity,
+                    maxBodyLength: Infinity,
+                    timeout: 120000 // 2 min timeout for OCR
+                });
+
+                // Clean up uploaded file from backend
+                try { fs.unlinkSync(filePath); } catch (e) {}
+
+                if (response.data.success) {
+                    const extData = response.data.extracted;
+                    const cleanVal = (field) => {
+                        if (field === null || field === undefined) return null;
+                        return typeof field === 'object' ? (field.value ?? null) : field;
+                    };
+                    
+                    // Update database record with success and extracted values
+                    await supabase
+                        .from('bill_records')
+                        .update({
+                            status: 'success',
+                            consumer_number: cleanVal(extData.consumerNumber),
+                            billing_month: cleanVal(extData.billingMonth),
+                            total_units: cleanVal(extData.totalUnits) !== null ? parseFloat(cleanVal(extData.totalUnits)) : null,
+                            bill_amount: cleanVal(extData.billAmount) !== null ? parseFloat(cleanVal(extData.billAmount)) : null,
+                            previous_reading: cleanVal(extData.previousReading) !== null ? parseFloat(cleanVal(extData.previousReading)) : null,
+                            current_reading: cleanVal(extData.currentReading) !== null ? parseFloat(cleanVal(extData.currentReading)) : null,
+                            electricity_board: extData.electricityBoard || 'Unknown',
+                            extraction_confidence: extData.confidence || 'medium',
+                            raw_text_length: parseInt(extData.rawTextLength || 0)
+                        })
+                        .eq('id', billId);
+                    console.log(`[backend] Bill ${billId} processed successfully.`);
+                } else {
+                    throw new Error(response.data.message || 'OCR extraction returned unsuccessful');
+                }
+            } catch (err) {
+                console.error(`[backend] Background OCR failed for bill ${billId}:`, err.message);
+                try { fs.unlinkSync(filePath); } catch (e) {}
+                await supabase
+                    .from('bill_records')
+                    .update({
+                        status: 'failed',
+                        error_message: err.message
+                    })
+                    .eq('id', billId);
+            }
+        })();
+
     } catch (error) {
         console.error('Bill upload error:', error.message);
-        const msg = error.response?.data?.message || error.message || 'Failed to process bill';
-        res.status(500).json({ success: false, message: msg });
+        res.status(500).json({ success: false, message: error.message || 'Failed to process bill' });
+    }
+});
+
+router.get('/bill-status/:id', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('bill_records')
+            .select('*')
+            .eq('id', req.params.id)
+            .single();
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ success: false, message: 'Bill record not found' });
+
+        if (data.status === 'success') {
+            res.json({
+                success: true,
+                status: 'success',
+                extracted: {
+                    consumerNumber: data.consumer_number,
+                    billingMonth: data.billing_month,
+                    totalUnits: data.total_units,
+                    billAmount: data.bill_amount,
+                    previousReading: data.previous_reading,
+                    currentReading: data.current_reading,
+                    electricityBoard: data.electricity_board,
+                    confidence: data.extraction_confidence,
+                    rawTextLength: data.raw_text_length,
+                    originalFileName: data.original_file_name,
+                    fileType: data.file_type
+                }
+            });
+        } else if (data.status === 'failed') {
+            res.json({
+                success: false,
+                status: 'failed',
+                message: data.error_message || 'OCR processing failed'
+            });
+        } else {
+            res.json({
+                success: true,
+                status: 'processing',
+                message: 'OCR is still processing in background'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
