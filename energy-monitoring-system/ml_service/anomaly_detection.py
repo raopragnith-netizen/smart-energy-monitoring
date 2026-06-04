@@ -10,6 +10,16 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 import numpy as np
 
+def check_user_id_support(db, table_name):
+    try:
+        db.table(table_name).select('user_id').limit(1).execute()
+        return True
+    except Exception as e:
+        if "does not exist" in str(e) or "42703" in str(e):
+            return False
+        return True
+
+
 
 def detect_abnormalities(db, user_id=None):
     """Detect anomalies in energy consumption data using Isolation Forest.
@@ -27,8 +37,9 @@ def detect_abnormalities(db, user_id=None):
         list: Anomaly dicts with date, units, expected_units, severity,
               deviation_pct, and rolling stats.
     """
+    has_user_id_energy = check_user_id_support(db, 'energy_data')
     query = db.table('energy_data').select('*')
-    if user_id:
+    if user_id and has_user_id_energy:
         query = query.eq('user_id', user_id)
     res = query.order('date', desc=False).execute()
     
@@ -72,11 +83,16 @@ def detect_abnormalities(db, user_id=None):
     ].copy()
 
     # Clear previous anomaly records and flags for this user specifically
-    if user_id:
+    has_user_id_anom = check_user_id_support(db, 'anomalies')
+    has_user_id_energy = check_user_id_support(db, 'energy_data')
+    if user_id and has_user_id_anom:
         db.table('anomalies').delete().eq('user_id', user_id).execute()
-        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
     else:
         db.table('anomalies').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+
+    if user_id and has_user_id_energy:
+        db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).eq('user_id', user_id).execute()
+    else:
         db.table('energy_data').update({'anomaly': False, 'anomaly_severity': None}).neq('id', '00000000-0000-0000-0000-000000000000').execute()
 
     anomaly_records = []
@@ -94,6 +110,7 @@ def detect_abnormalities(db, user_id=None):
         else:
             severity = 'mild'
 
+        has_user_id_anom = check_user_id_support(db, 'anomalies')
         rec = {
             "date": row['date'].isoformat(),
             "units": float(row['units']),
@@ -102,9 +119,10 @@ def detect_abnormalities(db, user_id=None):
             "severity": severity,
             "rolling_mean": float(round(row['rolling_mean_7'], 2)),
             "rolling_std": float(round(row['rolling_std_7'], 2)),
-            "raw_score": float(round(row['anomaly_raw_score'], 4)),
-            "user_id": user_id
+            "raw_score": float(round(row['anomaly_raw_score'], 4))
         }
+        if user_id and has_user_id_anom:
+            rec["user_id"] = user_id
         anomaly_records.append(rec)
 
         # Flag in original data (which is already scoped by user_id)

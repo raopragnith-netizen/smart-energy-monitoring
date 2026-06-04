@@ -73,21 +73,31 @@ def process_and_store_csv(file_path, db, user_id=None):
         raise ValueError("No valid records found in the CSV after processing.")
 
     # Clear old data (dataset replacement) for this user specifically
+    has_user_id = True
     if user_id:
+        try:
+            db.table('energy_data').select('user_id').limit(1).execute()
+        except Exception as e:
+            if "does not exist" in str(e) or "42703" in str(e):
+                has_user_id = False
+
+    if user_id and has_user_id:
         db.table('energy_data').delete().eq('user_id', user_id).execute()
     else:
         db.table('energy_data').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
 
     records = []
     for _, row in df.iterrows():
-        records.append({
+        rec = {
             "date": row['date'].isoformat(),
             "units": float(row['units']),
             "predicted_units": None,
             "anomaly": False,
-            "source": "csv",
-            "user_id": user_id
-        })
+            "source": "csv"
+        }
+        if user_id and has_user_id:
+            rec["user_id"] = user_id
+        records.append(rec)
 
     if records:
         # Split into chunks of 1000 if dataset is huge, but postgrest handles it well.

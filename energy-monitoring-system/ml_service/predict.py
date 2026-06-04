@@ -66,8 +66,9 @@ def load_lr(user_id=None, force_reload=False):
 
 def _fallback_prediction(db, user_id=None, days=1):
     """Generate a simple moving-average fallback prediction."""
+    has_user_id_energy = check_user_id_support(db, 'energy_data')
     query = db.table('energy_data').select('*')
-    if user_id:
+    if user_id and has_user_id_energy:
         query = query.eq('user_id', user_id)
     res = query.order('date', desc=True).limit(14).execute()
     data = res.data or []
@@ -88,14 +89,16 @@ def _fallback_prediction(db, user_id=None, days=1):
         variation = random.uniform(0.95, 1.05)
         pred_units = round(max(0.1, avg * variation), 2)
 
+        has_user_id_pred = check_user_id_support(db, 'predictions')
         pred_doc = {
             "target_date": target_date.isoformat(),
             "predicted_units": float(pred_units),
             "day_name": day_names[target_date.weekday()],
             "model_used": "MovingAverage",
-            "prediction_type": "weekly" if days > 1 else "single",
-            "user_id": user_id
+            "prediction_type": "weekly" if days > 1 else "single"
         }
+        if user_id and has_user_id_pred:
+            pred_doc["user_id"] = user_id
         db.table('predictions').insert(pred_doc).execute()
 
         predictions.append({
@@ -115,8 +118,9 @@ def generate_predictions(db, user_id=None):
     """
     model, scaler = load_lstm(user_id=user_id)
 
+    has_user_id_energy = check_user_id_support(db, 'energy_data')
     query = db.table('energy_data').select('*')
-    if user_id:
+    if user_id and has_user_id_energy:
         query = query.eq('user_id', user_id)
     res = query.order('date', desc=False).execute()
     
@@ -144,13 +148,15 @@ def generate_predictions(db, user_id=None):
             last_date = df['date'].iloc[-1]
             next_date = last_date + timedelta(days=1)
 
+            has_user_id_pred = check_user_id_support(db, 'predictions')
             pred_doc = {
                 "target_date": next_date.isoformat(),
                 "predicted_units": float(pred_units),
                 "model_used": "LSTM",
-                "prediction_type": "single",
-                "user_id": user_id
+                "prediction_type": "single"
             }
+            if user_id and has_user_id_pred:
+                pred_doc["user_id"] = user_id
             db.table('predictions').insert(pred_doc).execute()
 
             return [{
@@ -173,8 +179,9 @@ def generate_weekly_predictions(db, user_id=None):
     """
     model, scaler = load_lstm(user_id=user_id)
 
+    has_user_id_energy = check_user_id_support(db, 'energy_data')
     query = db.table('energy_data').select('*')
-    if user_id:
+    if user_id and has_user_id_energy:
         query = query.eq('user_id', user_id)
     res = query.order('date', desc=False).execute()
     
@@ -213,14 +220,16 @@ def generate_weekly_predictions(db, user_id=None):
                 target_date = last_date + timedelta(days=i + 1)
                 day_name = day_names[target_date.weekday()]
 
+                has_user_id_pred = check_user_id_support(db, 'predictions')
                 pred_doc = {
                     "target_date": target_date.isoformat(),
                     "predicted_units": float(pred_units),
                     "day_name": day_name,
                     "model_used": "LSTM",
-                    "prediction_type": "weekly",
-                    "user_id": user_id
+                    "prediction_type": "weekly"
                 }
+                if user_id and has_user_id_pred:
+                    pred_doc["user_id"] = user_id
                 db.table('predictions').insert(pred_doc).execute()
 
                 predictions.append({

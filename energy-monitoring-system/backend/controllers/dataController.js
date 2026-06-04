@@ -2,7 +2,19 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');
-const { supabase } = require('../utils/supabase');
+const { supabase, tableHasUserId } = require('../utils/supabase');
+
+/**
+ * Helper to build a PostgREST query on a table that is conditionally user-scoped.
+ */
+function queryTable(tableName, userId, selectOptions = null) {
+    let base = supabase.from(tableName);
+    let query = selectOptions ? base.select('*', selectOptions) : base.select('*');
+    if (tableHasUserId[tableName]) {
+        query = query.eq('user_id', userId);
+    }
+    return query;
+}
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000';
 
@@ -85,10 +97,7 @@ exports.trainModel = async (req, res) => {
 exports.getPredictions = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { data, error } = await supabase
-            .from('predictions')
-            .select('*')
-            .eq('user_id', userId)
+        const { data, error } = await queryTable('predictions', userId)
             .eq('prediction_type', 'single')
             .order('target_date', { ascending: false })
             .limit(1);
@@ -116,10 +125,7 @@ exports.getPredictions = async (req, res) => {
 exports.getAnomalies = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { data, error } = await supabase
-            .from('anomalies')
-            .select('*')
-            .eq('user_id', userId)
+        const { data, error } = await queryTable('anomalies', userId)
             .order('date', { ascending: false });
 
         if (error) throw error;
@@ -150,10 +156,7 @@ exports.getRecommendations = async (req, res) => {
         const userId = req.user.id;
 
         // Check if user has any data first
-        const { count, error: countErr } = await supabase
-            .from('energy_data')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', userId);
+        const { count, error: countErr } = await queryTable('energy_data', userId, { count: 'exact', head: true });
         
         if (countErr || !count || count === 0) {
             // No data — return empty recommendations
@@ -170,17 +173,11 @@ exports.getRecommendations = async (req, res) => {
         } catch (mlErr) {
             // Fallback: generate from user's own data only
             try {
-                const { data: recentData } = await supabase
-                    .from('energy_data')
-                    .select('*')
-                    .eq('user_id', userId)
+                const { data: recentData } = await queryTable('energy_data', userId)
                     .order('date', { ascending: false })
                     .limit(30);
 
-                const { data: latestPred } = await supabase
-                    .from('predictions')
-                    .select('*')
-                    .eq('user_id', userId)
+                const { data: latestPred } = await queryTable('predictions', userId)
                     .order('created_at', { ascending: false })
                     .limit(1)
                     .maybeSingle();
@@ -223,10 +220,7 @@ exports.getRecommendations = async (req, res) => {
 exports.getHistoricalData = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { data, error } = await supabase
-            .from('energy_data')
-            .select('*')
-            .eq('user_id', userId)
+        const { data, error } = await queryTable('energy_data', userId)
             .order('date', { ascending: false })
             .limit(100);
 
@@ -256,10 +250,7 @@ exports.getRealtimeStatus = async (req, res) => {
         const userId = req.user.id;
 
         // Check if user has ANY data
-        const { count: dataCount, error: countErr } = await supabase
-            .from('energy_data')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', userId);
+        const { count: dataCount, error: countErr } = await queryTable('energy_data', userId, { count: 'exact', head: true });
 
         if (countErr) throw countErr;
 
@@ -279,33 +270,21 @@ exports.getRealtimeStatus = async (req, res) => {
             });
         }
 
-        const { data: latestData, error: dataErr } = await supabase
-            .from('energy_data')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: latestData, error: dataErr } = await queryTable('energy_data', userId)
             .order('date', { ascending: false })
             .limit(7);
         if (dataErr) throw dataErr;
 
-        const { data: latestPrediction, error: predErr } = await supabase
-            .from('predictions')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: latestPrediction, error: predErr } = await queryTable('predictions', userId)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
         if (predErr) throw predErr;
 
-        const { count: anomalyCount, error: anomErr } = await supabase
-            .from('anomalies')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', userId);
+        const { count: anomalyCount, error: anomErr } = await queryTable('anomalies', userId, { count: 'exact', head: true });
         if (anomErr) throw anomErr;
 
-        const { data: allData, error: allErr } = await supabase
-            .from('energy_data')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: allData, error: allErr } = await queryTable('energy_data', userId)
             .order('date', { ascending: false })
             .limit(30);
         if (allErr) throw allErr;
@@ -348,27 +327,18 @@ exports.getEnhancedHistorical = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        const { data: historicalData, error: histErr } = await supabase
-            .from('energy_data')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: historicalData, error: histErr } = await queryTable('energy_data', userId)
             .order('date', { ascending: false })
             .limit(200);
         if (histErr) throw histErr;
 
         const sortedHistory = (historicalData || []).reverse();
 
-        const { data: predictions, error: predErr } = await supabase
-            .from('predictions')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: predictions, error: predErr } = await queryTable('predictions', userId)
             .order('target_date', { ascending: true });
         if (predErr) throw predErr;
 
-        const { data: anomalies, error: anomErr } = await supabase
-            .from('anomalies')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: anomalies, error: anomErr } = await queryTable('anomalies', userId)
             .order('date', { ascending: true });
         if (anomErr) throw anomErr;
 
@@ -405,10 +375,7 @@ exports.getWeeklyPredictions = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        const { data, error } = await supabase
-            .from('predictions')
-            .select('*')
-            .eq('user_id', userId)
+        const { data, error } = await queryTable('predictions', userId)
             .eq('prediction_type', 'weekly')
             .order('target_date', { ascending: true })
             .limit(7);
@@ -448,19 +415,13 @@ exports.getMonthlyProjection = async (req, res) => {
         
         const monthStart = new Date(year, month, 1).toISOString();
         
-        const { data: monthData, error: monthErr } = await supabase
-            .from('energy_data')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: monthData, error: monthErr } = await queryTable('energy_data', userId)
             .gte('date', monthStart)
             .order('date', { ascending: true });
             
         if (monthErr) throw monthErr;
         
-        const { data: recentData, error: recentErr } = await supabase
-            .from('energy_data')
-            .select('*')
-            .eq('user_id', userId)
+        const { data: recentData, error: recentErr } = await queryTable('energy_data', userId)
             .order('date', { ascending: false })
             .limit(7);
             
@@ -514,10 +475,7 @@ exports.getUserDataStatus = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        const { count: dataCount, error: dataErr } = await supabase
-            .from('energy_data')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', userId);
+        const { count: dataCount, error: dataErr } = await queryTable('energy_data', userId, { count: 'exact', head: true });
 
         if (dataErr) throw dataErr;
 
@@ -527,10 +485,7 @@ exports.getUserDataStatus = async (req, res) => {
         }
 
         // Check if there's a bill currently processing
-        const { data: pendingBills, error: billErr } = await supabase
-            .from('bill_records')
-            .select('id')
-            .eq('user_id', userId)
+        const { data: pendingBills, error: billErr } = await queryTable('bill_records', userId)
             .eq('status', 'processing')
             .limit(1);
 
