@@ -221,9 +221,9 @@ function startMLServiceProcess() {
 }
 
 async function mlWatchdog() {
-    const running = await isMLServiceRunning();
-    if (!running && !mlStarting) {
-        console.log('[ML Watchdog] ML Service is down — restarting...');
+    const isExited = !mlProcess || mlProcess.exitCode !== null;
+    if (isExited && !mlStarting) {
+        console.log('[ML Watchdog] ML Service process is down or exited — restarting...');
         startMLServiceProcess();
     }
 }
