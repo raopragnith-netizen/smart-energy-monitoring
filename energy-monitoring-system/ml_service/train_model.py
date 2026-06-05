@@ -120,7 +120,7 @@ def train_all_models(db, user_id=None):
 
     X_lstm, y_lstm = np.array(X_lstm), np.array(y_lstm)
 
-    if len(X_lstm) > 0:
+    if len(X_lstm) > 0 and os.environ.get('RENDER') != 'true':
         try:
             lstm = build_lstm_model((lookback, 1))
 
@@ -161,6 +161,8 @@ def train_all_models(db, user_id=None):
             metrics['LSTM_Status'] = f"Failed: {str(lstm_err)}"
             import gc
             gc.collect()
+    elif os.environ.get('RENDER') == 'true':
+        metrics['LSTM_Status'] = "Skipped on Render (512MB RAM limit)"
     else:
         metrics['LSTM_Status'] = "Insufficient temporal data for LSTM"
 

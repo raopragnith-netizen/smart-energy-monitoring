@@ -84,6 +84,14 @@ def _fallback_prediction(db, user_id=None, days=1):
         query = query.eq('user_id', user_id)
     res = query.order('date', desc=True).limit(14).execute()
     data = res.data or []
+    if not data and user_id:
+        # Fallback to global data if user-specific data is empty
+        query_global = db.table('energy_data').select('*')
+        if has_user_id_energy:
+            query_global = query_global.is_('user_id', 'null')
+        res_global = query_global.order('date', desc=True).limit(14).execute()
+        data = res_global.data or []
+
     if not data:
         return []
 
@@ -137,6 +145,14 @@ def generate_predictions(db, user_id=None):
     res = query.order('date', desc=False).execute()
     
     data = res.data or []
+    if not data and user_id:
+        # Fallback to global data if user-specific data is empty
+        query_global = db.table('energy_data').select('*')
+        if has_user_id_energy:
+            query_global = query_global.is_('user_id', 'null')
+        res_global = query_global.order('date', desc=False).execute()
+        data = res_global.data or []
+
     if len(data) < 7:
         if len(data) > 0:
             return _fallback_prediction(db, user_id=user_id, days=1)
@@ -198,6 +214,14 @@ def generate_weekly_predictions(db, user_id=None):
     res = query.order('date', desc=False).execute()
     
     data = res.data or []
+    if not data and user_id:
+        # Fallback to global data if user-specific data is empty
+        query_global = db.table('energy_data').select('*')
+        if has_user_id_energy:
+            query_global = query_global.is_('user_id', 'null')
+        res_global = query_global.order('date', desc=False).execute()
+        data = res_global.data or []
+
     if len(data) < 7:
         if len(data) > 0:
             return _fallback_prediction(db, user_id=user_id, days=7)
