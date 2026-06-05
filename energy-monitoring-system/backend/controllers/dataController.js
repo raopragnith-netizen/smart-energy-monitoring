@@ -21,7 +21,7 @@ console.log(`ML Service URL loaded: ${ML_SERVICE_URL}`);
 
 async function checkMLServiceHealth() {
     try {
-        await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 2000 });
+        await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 10000 });
         return true;
     } catch (err) {
         console.error("ML Service unavailable");

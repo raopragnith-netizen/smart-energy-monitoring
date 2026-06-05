@@ -558,7 +558,10 @@ def extract_text_from_image(image_path):
         if path != image_path:
             temp_files.append(path)
         try:
-            result = reader.ocr(path, cls=True)
+            try:
+                result = reader.ocr(path, cls=True)
+            except TypeError:
+                result = reader.ocr(path)
             text, detections = _parse_paddle_result(result)
             avg_conf = (
                 sum(d['confidence'] for d in detections) / len(detections)
