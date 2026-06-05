@@ -130,6 +130,7 @@ def _get_paddleocr_reader():
             text_det_thresh=0.3,     # Lower threshold for better detection on bills
             text_det_box_thresh=0.5,
             text_recognition_batch_size=16,
+            enable_mkldnn=False,
         )
         ocr_logger.info("PaddleOCR reader initialized successfully.")
     return _paddleocr_reader
