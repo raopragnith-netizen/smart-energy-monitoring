@@ -54,6 +54,7 @@ def train_all_models(db, user_id=None):
     df = pd.DataFrame(data)
     df['units'] = df['units'].astype(float)
     df = prepare_features(df)
+    df = df.tail(1000)
 
     if len(df) < 10:
         raise ValueError(
@@ -133,9 +134,9 @@ def train_all_models(db, user_id=None):
                 min_delta=0.0001
             )
 
-            # Use more epochs with early stopping (will stop when converged)
-            epochs = min(50, max(15, len(X_lstm) // 2))
-            batch_size = min(16, max(4, len(X_lstm) // 10))
+            # Use lightweight parameters to complete training in under 15 seconds
+            epochs = 12
+            batch_size = 32
 
             history = lstm.fit(
                 X_lstm, y_lstm,
